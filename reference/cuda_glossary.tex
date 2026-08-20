@@ -1,0 +1,390 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{listings}
+
+\setlist[itemize]{leftmargin=1.4em,itemsep=2pt,topsep=3pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    columns=fullflexible
+}
+
+\title{CUDA and Parallel Computing: Basic Terminology Notes}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Processor and Performance Terms}
+
+\subsection{Clock Frequency}
+
+\textbf{Clock frequency} is the number of processor clock cycles per second, measured in Hertz (Hz). For a frequency \(f\), the clock period is
+
+\[
+T=\frac{1}{f}.
+\]
+
+For example, \(3~\mathrm{GHz}\) means \(3\times10^9\) clock cycles per second.
+
+A higher frequency does \emph{not} automatically mean higher application performance. Performance also depends on how much useful work is completed per cycle, memory stalls, instruction dependencies, branch behavior, and available parallelism.
+
+A useful distinction is:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Term & Meaning & Typical unit \\
+\midrule
+Frequency & Clock cycles per second & Hz, GHz \\
+Bandwidth & Data transferred per second & GB/s \\
+Latency & Time required for one operation/access & ns, cycles \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Instruction throughput is often approximated by
+
+\[
+\text{Instruction throughput}
+\approx
+\text{Clock frequency}\times\text{IPC},
+\]
+
+where IPC means \textbf{Instructions Per Cycle}.
+
+\subsection{ALU and FPU}
+
+An \textbf{Arithmetic Logic Unit (ALU)} is a hardware execution unit that performs integer arithmetic and logical operations such as addition, subtraction, comparison, shifts, AND, OR, and XOR.
+
+A \textbf{Floating-Point Unit (FPU)} performs floating-point arithmetic. Modern processors may contain several types of execution units, including integer ALUs, floating-point units, vector units, and specialized matrix units.
+
+The key idea is:
+
+\[
+\boxed{\text{Execution units are the hardware that actually performs computation.}}
+\]
+
+\subsection{Control Logic}
+
+\textbf{Control logic} manages how instructions move through a processor. Its responsibilities include instruction fetch and decode, dependency handling, scheduling, branch handling, register access, and load/store control.
+
+Important related terms:
+
+\begin{itemize}
+    \item \textbf{Program Counter (PC):} stores the address of the next instruction.
+    \item \textbf{Instruction fetch:} retrieves the next instruction.
+    \item \textbf{Instruction decode:} determines what operation the instruction requests.
+    \item \textbf{Branch prediction:} predicts the outcome of a branch so execution can continue before the result is known.
+    \item \textbf{Out-of-order execution:} allows independent instructions to execute before earlier stalled instructions, while preserving the correct final program result.
+\end{itemize}
+
+CPUs devote substantial hardware to sophisticated control logic because they are optimized for low-latency execution of a relatively small number of complex instruction streams. GPUs devote proportionally more hardware to arithmetic throughput and parallel execution.
+
+\section{Memory Terms}
+
+\subsection{Cache}
+
+A \textbf{cache} is a small, fast memory close to the processor that stores recently or frequently used data and instructions. Its purpose is to reduce the average cost of accessing slower main memory.
+
+A simplified memory hierarchy is
+
+\[
+\text{registers}
+\rightarrow
+\text{cache}
+\rightarrow
+\text{DRAM}
+\rightarrow
+\text{storage}.
+\]
+
+Two locality principles explain why caches work:
+
+\begin{itemize}
+    \item \textbf{Temporal locality:} recently accessed data is likely to be accessed again soon.
+    \item \textbf{Spatial locality:} data near a recently accessed address is likely to be accessed soon.
+\end{itemize}
+
+A \textbf{cache hit} means the requested data is already in the cache. A \textbf{cache miss} means the processor must access a lower and slower memory level.
+
+Modern CPUs commonly use multiple cache levels:
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+Level & Relative speed & Relative size & Typical sharing \\
+\midrule
+L1 & fastest & smallest & usually per core \\
+L2 & fast & larger & per core or core group \\
+L3 & slower & much larger & shared by several cores \\
+DRAM & much slower & far larger & system main memory \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Caches are typically implemented using \textbf{SRAM}, which is fast but consumes more chip area per bit than DRAM.
+
+\subsection{Cache Line}
+
+A \textbf{cache line} is the fixed-size block transferred between cache levels or between cache and memory. A common CPU cache-line size is 64 bytes.
+
+This is why sequential memory access usually benefits from spatial locality: reading one value often brings nearby values into the cache at the same time.
+
+\subsection{DRAM}
+
+\textbf{Dynamic Random-Access Memory (DRAM)} is the main memory used to store program data while the computer is running. Large arrays, heap objects, program code, and operating-system data ultimately reside in DRAM unless currently cached closer to the processor.
+
+DRAM provides large capacity at relatively low cost per bit, but its access latency is much higher than cache latency.
+
+DRAM performance is commonly discussed using two different quantities:
+
+\begin{itemize}
+    \item \textbf{Latency:} how long one memory access takes.
+    \item \textbf{Bandwidth:} how much data can be transferred per unit time.
+\end{itemize}
+
+GPUs use high-bandwidth memory systems because thousands of active threads may request data simultaneously.
+
+\section{CUDA Execution Model}
+
+\subsection{Kernel}
+
+A \textbf{kernel} is a function that runs on the GPU and is executed by many CUDA threads in parallel.
+
+A kernel launch defines how many threads will execute by specifying a \textbf{grid} of \textbf{thread blocks}.
+
+\subsection{Thread, Block, and Grid}
+
+A \textbf{thread} is the smallest logical execution unit exposed by CUDA.
+
+A \textbf{thread block} is a group of threads that can cooperate using shared memory and block-level synchronization.
+
+A \textbf{grid} is the complete collection of blocks created by one kernel launch.
+
+The hierarchy is
+
+\[
+\text{kernel launch}
+\rightarrow
+\text{grid}
+\rightarrow
+\text{blocks}
+\rightarrow
+\text{threads}.
+\]
+
+For a one-dimensional grid, a common global thread index is
+
+\[
+i
+=
+\texttt{blockIdx.x}\times\texttt{blockDim.x}
++
+\texttt{threadIdx.x}.
+\]
+
+This expression maps a thread's position in the grid to a data index.
+
+\subsection{Warp}
+
+A \textbf{warp} is the basic scheduling and execution group on NVIDIA GPUs. A warp contains 32 threads.
+
+CUDA exposes individual threads, but the hardware schedules them in warps. Threads in one warp normally execute the same instruction on different data. NVIDIA calls this execution model \textbf{Single Instruction, Multiple Threads (SIMT)}.
+
+\subsection{Warp Divergence}
+
+\textbf{Warp divergence} occurs when threads in the same warp follow different control-flow paths. The warp may then need to execute the paths separately while disabling threads that are not active on the current path.
+
+Therefore, divergence can reduce effective parallelism.
+
+\subsection{Shared Memory}
+
+\textbf{Shared memory} is a low-latency on-chip memory shared by threads in the same block. It is explicitly managed by CUDA programs and is commonly used for data reuse, tiling, and communication among threads in one block.
+
+\subsection{Memory Bank and Bank Conflict}
+
+Shared memory is divided into \textbf{memory banks} so multiple accesses can be serviced in parallel.
+
+A \textbf{bank conflict} occurs when multiple threads in the same warp access different addresses that map to the same bank. These accesses may need to be serialized.
+
+For a simplified 32-bank model with 32-bit words,
+
+\[
+\text{bank index}
+\approx
+\text{word index}\bmod 32.
+\]
+
+\subsection{Global Memory}
+
+\textbf{Global memory} is the large off-chip memory visible to GPU threads. It has much larger capacity than shared memory or registers but also much higher access latency.
+
+Efficient CUDA kernels therefore try to use global memory bandwidth effectively and avoid unnecessary memory traffic.
+
+\subsection{Memory Coalescing}
+
+\textbf{Memory coalescing} means organizing global-memory accesses so neighboring threads in a warp access nearby memory addresses that can be served by a small number of memory transactions.
+
+Coalesced access improves effective memory bandwidth.
+
+\subsection{Synchronization}
+
+\textbf{Synchronization} coordinates threads that depend on each other's work.
+
+Within a thread block,
+
+\begin{lstlisting}[language=C++]
+__syncthreads();
+\end{lstlisting}
+
+acts as a barrier: threads in the block wait until all participating threads have reached the synchronization point before continuing.
+
+\section{CPU and GPU Design}
+
+A CPU is primarily \textbf{latency-oriented}: it uses sophisticated control logic, large caches, branch prediction, and out-of-order execution to make a relatively small number of instruction streams complete quickly.
+
+A GPU is primarily \textbf{throughput-oriented}: it uses many execution units and massive thread-level parallelism to complete a large amount of work per unit time.
+
+The central distinction is
+
+\[
+\boxed{\text{CPU: optimize the latency of a few complex threads}}
+\]
+
+\[
+\boxed{\text{GPU: optimize the throughput of many parallel threads}}
+\]
+
+CUDA allows one program to use both: the CPU acts as the \textbf{host}, while the GPU acts as the \textbf{device}.
+
+\section{Parallel Programming Interfaces}
+
+\subsection{CUDA}
+
+\textbf{Compute Unified Device Architecture (CUDA)} is NVIDIA's programming platform and execution model for general-purpose computing on NVIDIA GPUs.
+
+CUDA exposes GPU concepts such as kernels, grids, blocks, threads, synchronization, and the GPU memory hierarchy.
+
+\subsection{OpenMP}
+
+\textbf{Open Multi-Processing (OpenMP)} is a directive-based programming interface mainly used for shared-memory parallelism. It is commonly used to parallelize loops across CPU cores and can also target some accelerators.
+
+Typical abstraction:
+
+\[
+\boxed{\text{OpenMP} \approx \text{shared-memory thread parallelism}}
+\]
+
+\subsection{MPI}
+
+\textbf{Message Passing Interface (MPI)} is the standard programming interface for distributed-memory parallel computing. Different processes or compute nodes own separate memory and exchange data explicitly through messages.
+
+Typical abstraction:
+
+\[
+\boxed{\text{MPI} \approx \text{parallelism across processes or compute nodes}}
+\]
+
+\subsection{NCCL}
+
+\textbf{NVIDIA Collective Communications Library (NCCL)} is an NVIDIA library optimized for communication among GPUs.
+
+It provides collective operations such as broadcast, reduce, all-reduce, all-gather, and reduce-scatter. NCCL is widely used in distributed deep learning.
+
+Typical abstraction:
+
+\[
+\boxed{\text{NCCL} \approx \text{high-performance collective communication among GPUs}}
+\]
+
+\subsection{OpenCL}
+
+\textbf{Open Computing Language (OpenCL)} is a cross-vendor programming standard for heterogeneous computing on CPUs, GPUs, and other accelerators.
+
+Its execution model is conceptually similar to CUDA, but its terminology differs:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+CUDA & OpenCL & Meaning \\
+\midrule
+Thread & Work-item & Logical execution unit \\
+Thread block & Work-group & Cooperative group of threads \\
+Grid & NDRange & Full execution space \\
+Shared memory & Local memory & Memory shared within a group \\
+Global memory & Global memory & Device-wide memory \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Quick Comparison}
+
+\begin{center}
+\begin{tabular}{p{0.16\linewidth}p{0.38\linewidth}p{0.34\linewidth}}
+\toprule
+Interface & Main purpose & Typical scope \\
+\midrule
+CUDA & Explicit GPU programming & NVIDIA GPU \\
+OpenMP & Shared-memory parallelism & Multicore CPU / accelerator \\
+MPI & Distributed-memory parallelism & Multiple processes / nodes \\
+NCCL & GPU collective communication & Multiple NVIDIA GPUs \\
+OpenCL & Portable accelerator programming & Cross-vendor devices \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Quick Lookup Summary}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{p{0.24\linewidth}p{0.68\linewidth}}
+\toprule
+Term & Short definition \\
+\midrule
+Clock frequency & Number of processor clock cycles per second. \\
+Latency & Time required to complete one operation or access. \\
+Bandwidth & Amount of data transferred per unit time. \\
+ALU & Hardware unit for integer arithmetic and logic. \\
+FPU & Hardware unit for floating-point arithmetic. \\
+Control logic & Hardware that fetches, decodes, schedules, and coordinates instructions. \\
+Cache & Small fast memory used to reduce average memory-access latency. \\
+Cache line & Fixed-size block moved through the cache hierarchy. \\
+DRAM & Large-capacity main memory with relatively high latency. \\
+Kernel & Function executed on the GPU by many threads. \\
+Thread & Smallest logical CUDA execution unit. \\
+Block & Cooperative group of CUDA threads. \\
+Grid & All blocks created by one kernel launch. \\
+Warp & Hardware execution group of 32 NVIDIA GPU threads. \\
+SIMT & One instruction applied to multiple GPU threads with independent thread state. \\
+Warp divergence & Threads in one warp following different control-flow paths. \\
+Shared memory & Fast on-chip memory shared by threads in one block. \\
+Global memory & Large off-chip GPU memory visible to all threads. \\
+Memory bank & Parallel partition of shared memory. \\
+Bank conflict & Multiple warp threads contending for the same shared-memory bank. \\
+Memory coalescing & Combining nearby global-memory accesses from a warp into efficient transactions. \\
+Synchronization & Coordination between threads when execution has dependencies. \\
+OpenMP & Shared-memory parallel programming interface. \\
+MPI & Distributed-memory message-passing interface. \\
+NCCL & Collective communication library optimized for NVIDIA GPUs. \\
+OpenCL & Cross-vendor heterogeneous parallel programming standard. \\
+CUDA & NVIDIA platform and programming model for GPU computing. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
