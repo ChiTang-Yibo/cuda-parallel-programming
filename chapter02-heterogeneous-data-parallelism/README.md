@@ -141,7 +141,9 @@ PTX stands for **Parallel Thread Execution** and acts as an intermediate represe
 
 - [`notes/chapter02_notes.tex`](notes/chapter02_notes.tex) — LaTeX source
 - [`notes/chapter02_notes.pdf`](notes/chapter02_notes.pdf) — compiled chapter notes
-- [`code/vec_add.cu`](code/vec_add.cu) — CUDA vector-addition implementation
+- [`code/vec_add.cu`](code/vec_add.cu) — basic CUDA vector-addition implementation
+- [`code/vec_add_experiment.cu`](code/vec_add_experiment.cu) — configurable vector-addition experiment
+- [`code/vec_add_experiment.md`](code/vec_add_experiment.md) — experiment setup, results, and analysis
 - [`exercises/cuda_ch2_exercises_answers.md`](exercises/cuda_ch2_exercises_answers.md) — exercise answers and explanations
 - [`../reference/cuda_glossary.pdf`](../reference/cuda_glossary.pdf) — CUDA and parallel-computing terminology reference
 
