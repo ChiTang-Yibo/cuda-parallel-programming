@@ -62,7 +62,7 @@ cuda-parallel-programming/
 ## Current Progress
 
 - [x] Chapter 1 — Introduction to Heterogeneous Parallel Computing
-- [ ] Chapter 2 — Heterogeneous Data Parallelism
+- [x] Chapter 2 — Heterogeneous Data Parallelism
 - [ ] Chapter 3 — Multidimensional Grids and Data
 - [ ] Chapter 4 — GPU Architecture and Scheduling
 - [ ] Chapter 5 — Memory Architecture and Data Locality

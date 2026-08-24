@@ -1,0 +1,670 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[hidelinks]{hyperref}
+
+\lstdefinestyle{cudaStyle}{
+    language=C++,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\bfseries,
+    commentstyle=\itshape,
+    columns=fullflexible,
+    keepspaces=true,
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    rulecolor=\color{black!30}
+}
+\lstset{style=cudaStyle}
+
+\setlist[itemize]{leftmargin=2em,itemsep=2pt,topsep=3pt}
+
+\title{CUDA Chapter 2 Notes: Heterogeneous Data Parallelism}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+% ============================================================
+\section{Heterogeneous Data-Parallel Computing}
+% ============================================================
+
+Chapter 2 turns the general motivation for GPU computing into a concrete CUDA programming model.
+
+\textbf{Heterogeneous computing} uses different processors for different parts of a program: the CPU acts as the \textbf{host}, while the GPU acts as the \textbf{device}. \textbf{Data parallelism} means applying the same computation to many independent data elements.
+
+The basic mapping is
+
+\[
+\begin{aligned}
+&\text{large dataset} \\
+&\qquad\downarrow \\
+&\text{independent data elements} \\
+&\qquad\downarrow \\
+&\text{many CUDA threads} \\
+&\qquad\downarrow \\
+&\text{parallel output generation}.
+\end{aligned}
+\]
+
+A simple example is RGB-to-grayscale conversion. For pixel \(i\),
+
+\[
+I[i]=(r_i,g_i,b_i),
+\]
+
+and its grayscale luminance is
+
+\[
+L_i = 0.21r_i + 0.72g_i + 0.07b_i.
+\]
+
+Because each output pixel depends only on its corresponding input pixel, different pixels can be processed independently.
+
+Thus, a serial loop
+
+\[
+\text{loop iteration }i
+\]
+
+can often be mapped directly to
+
+\[
+\text{CUDA thread }i.
+\]
+
+\subsection{Data Parallelism vs.\ Task Parallelism}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Type & Main idea & Example \\
+\midrule
+Data parallelism & Same operation on many data elements & Process many pixels \\
+Task parallelism & Different independent activities & Overlap transfer and computation \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This chapter mainly focuses on \textbf{data parallelism}, which provides the large amount of independent work needed for GPU execution.
+
+% ============================================================
+\section{CUDA C Program Structure}
+% ============================================================
+
+A CUDA source file may contain both CPU and GPU code. The host controls program execution and launches kernels; each kernel launch creates a grid of GPU threads.
+
+The basic execution model is
+
+\[
+\begin{aligned}
+&\text{CPU host code} \\
+&\qquad\downarrow \\
+&\text{prepare data and program state} \\
+&\qquad\downarrow \\
+&\text{launch a CUDA kernel} \\
+&\qquad\downarrow \\
+&\text{GPU grid executes many threads in parallel} \\
+&\qquad\downarrow \\
+&\text{host continues program control}.
+\end{aligned}
+\]
+
+A kernel launch uses CUDA's execution-configuration syntax:
+
+\begin{lstlisting}
+kernelName<<<numBlocks, threadsPerBlock>>>(arguments);
+\end{lstlisting}
+
+For a one-dimensional launch,
+
+\[
+N_{\text{threads}}
+=
+N_{\text{blocks}}
+\times
+N_{\text{threads/block}}.
+\]
+
+The key point is that CPU execution remains primarily control-oriented, while the kernel represents a parallel phase executed by many GPU threads.
+
+% ============================================================
+\section{Vector Addition: From Loop Iterations to Threads}
+% ============================================================
+
+Vector addition provides the minimal CUDA example:
+
+\[
+C[i]=A[i]+B[i],
+\qquad 0\le i<n.
+\]
+
+A CPU implementation would normally iterate over \(i\). CUDA replaces these independent loop iterations with independent threads:
+
+\[
+\begin{aligned}
+&\text{CPU loop iteration }i \\
+&\qquad\downarrow \\
+&\text{CUDA thread }i \\
+&\qquad\downarrow \\
+&C[i]=A[i]+B[i].
+\end{aligned}
+\]
+
+The kernel therefore only needs to determine which element belongs to the current thread:
+
+\begin{lstlisting}
+__global__
+void vecAddKernel(const float* A,
+                  const float* B,
+                  float* C,
+                  int n)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < n) {
+        C[i] = A[i] + B[i];
+    }
+}
+\end{lstlisting}
+
+This kernel contains the two essential ideas of Chapter 2:
+
+\begin{itemize}
+    \item compute a unique global data index for each thread;
+    \item protect memory accesses with a boundary check.
+\end{itemize}
+
+% ============================================================
+\section{Grid, Blocks, Threads, and Thread Indexing}
+% ============================================================
+
+A kernel launch creates a \textbf{grid}. The grid contains multiple \textbf{thread blocks}, and each block contains multiple \textbf{threads}:
+
+\[
+\boxed{
+\text{kernel launch}
+\rightarrow
+\text{grid}
+\rightarrow
+\text{thread blocks}
+\rightarrow
+\text{threads}
+}
+\]
+
+For a one-dimensional grid, CUDA provides three important built-in variables:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Variable & Meaning \\
+\midrule
+\texttt{threadIdx.x} & Thread index inside the current block \\
+\texttt{blockIdx.x} & Block index inside the grid \\
+\texttt{blockDim.x} & Number of threads in each block \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The global thread index is
+
+\[
+\boxed{
+i
+=
+\texttt{blockIdx.x}
+\times
+\texttt{blockDim.x}
++
+\texttt{threadIdx.x}
+}
+\]
+
+For example, if each block contains 256 threads,
+
+\[
+\begin{aligned}
+\text{Block }0 &\rightarrow i=0,\ldots,255,\\
+\text{Block }1 &\rightarrow i=256,\ldots,511,\\
+\text{Block }2 &\rightarrow i=512,\ldots,767.
+\end{aligned}
+\]
+
+Thus, the block index identifies a group of threads, while the thread index identifies one thread inside that group.
+
+Thread blocks within a grid are independent and may execute in any order. This independence allows the same kernel to scale across GPUs with different amounts of hardware.
+
+% ============================================================
+\section{CUDA Function Qualifiers}
+% ============================================================
+
+CUDA extends C/C++ function declarations with qualifiers that specify where a function is called and where it executes.
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+Qualifier & Callable from & Executes on & Role \\
+\midrule
+\texttt{\_\_host\_\_} & Host & Host & CPU function \\
+\texttt{\_\_global\_\_} & Host & Device & Kernel launching a grid \\
+\texttt{\_\_device\_\_} & Device & Device & GPU helper function \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A function without a CUDA qualifier is a host function by default. The most important qualifier in this chapter is \texttt{\_\_global\_\_}, because it marks a kernel launched from CPU code and executed by a grid of GPU threads.
+
+% ============================================================
+\section{Device Global Memory and Data Transfer}
+% ============================================================
+
+Host and device memory are treated as separate memory spaces in the basic CUDA programming model.
+
+A useful naming convention is
+
+\[
+\begin{aligned}
+A_h,B_h,C_h &\rightarrow \text{host memory},\\
+A_d,B_d,C_d &\rightarrow \text{device global memory}.
+\end{aligned}
+\]
+
+The complete workflow is
+
+\[
+\begin{aligned}
+&\text{allocate device memory} \\
+&\qquad\downarrow \\
+&\text{copy inputs from host to device} \\
+&\qquad\downarrow \\
+&\text{launch the kernel} \\
+&\qquad\downarrow \\
+&\text{compute the result in device memory} \\
+&\qquad\downarrow \\
+&\text{copy the result back to host memory} \\
+&\qquad\downarrow \\
+&\text{free device memory}.
+\end{aligned}
+\]
+
+The three basic CUDA Runtime API functions are:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Function & Purpose \\
+\midrule
+\texttt{cudaMalloc} & Allocate device global memory \\
+\texttt{cudaMemcpy} & Copy data between host and device \\
+\texttt{cudaFree} & Release device memory \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The core syntax is:
+
+\begin{lstlisting}
+cudaMalloc((void**)&A_d, size);
+
+cudaMemcpy(A_d, A_h, size,
+           cudaMemcpyHostToDevice);
+
+cudaMemcpy(C_h, C_d, size,
+           cudaMemcpyDeviceToHost);
+
+cudaFree(A_d);
+\end{lstlisting}
+
+A device pointer such as \texttt{A\_d} is a variable visible in host code, but the address stored in it refers to GPU memory. Ordinary host code should therefore not dereference it directly.
+
+For \(n\) single-precision values,
+
+\[
+\texttt{size}
+=
+n\times\texttt{sizeof(float)}.
+\]
+
+The first argument of \texttt{cudaMalloc} is the address of the device-pointer variable because the runtime must write the newly allocated GPU address into that variable.
+
+CUDA API functions return error information. Production code should check these return values, although detailed error-handling code is omitted here to keep the basic workflow clear.
+
+% ============================================================
+\section{Kernel Launch Configuration}
+% ============================================================
+
+For a vector of length \(n\), the host must launch enough CUDA threads so that every valid element can be assigned to one thread.
+
+A standard one-dimensional configuration is
+
+\begin{lstlisting}
+int blockSize = 256;
+int numBlocks = (n + blockSize - 1) / blockSize;
+
+vecAddKernel<<<numBlocks, blockSize>>>(
+    A_d, B_d, C_d, n);
+\end{lstlisting}
+
+Here,
+
+\begin{itemize}
+    \item \texttt{blockSize} is the number of threads in each block;
+    \item \texttt{numBlocks} is the number of blocks in the grid;
+    \item the launch syntax \texttt{<<<numBlocks, blockSize>>>} tells CUDA how many blocks to create and how many threads each block contains.
+\end{itemize}
+
+Therefore, the total number of launched threads is
+
+\[
+N_{\text{launched}}
+=
+N_{\text{blocks}}
+\times
+N_{\text{threads/block}}.
+\]
+
+The grid must contain at least \(n\) threads:
+
+\[
+N_{\text{launched}} \ge n.
+\]
+
+If each block contains \(N_{\text{threads/block}}\) threads, the required number of blocks is
+
+\[
+N_{\text{blocks}}
+=
+\left\lceil
+\frac{n}{N_{\text{threads/block}}}
+\right\rceil.
+\]
+
+Because ordinary C/C++ integer division truncates the fractional part, CUDA programs often implement this ceiling division as
+
+\[
+\boxed{
+\texttt{numBlocks}
+=
+\frac{\texttt{n + blockSize - 1}}{\texttt{blockSize}}
+}
+\]
+
+which appears in code as
+
+\begin{lstlisting}
+int numBlocks =
+    (n + blockSize - 1) / blockSize;
+\end{lstlisting}
+
+For example, let
+
+\[
+n=1000,
+\qquad
+\texttt{blockSize}=256.
+\]
+
+Then
+
+\[
+N_{\text{blocks}}
+=
+\left\lceil
+\frac{1000}{256}
+\right\rceil
+=
+4,
+\]
+
+so CUDA launches
+
+\[
+4\times256=1024
+\]
+
+threads.
+
+The first 1000 threads correspond to valid vector elements, while the remaining 24 threads have indices outside the data range. This is why the kernel contains a boundary check:
+
+\begin{lstlisting}
+if (i < n) {
+    C[i] = A[i] + B[i];
+}
+\end{lstlisting}
+
+Without this condition, the extra threads could access memory beyond the allocated arrays.
+
+The complete indexing logic is therefore
+
+\[
+\boxed{
+i
+=
+\texttt{blockIdx.x}
+\times
+\texttt{blockDim.x}
++
+\texttt{threadIdx.x}
+}
+\]
+
+followed by
+
+\[
+\boxed{i<n}.
+\]
+
+The launch configuration and the boundary check work together:
+
+\[
+\text{launch enough threads}
+\rightarrow
+\text{compute a unique global index}
+\rightarrow
+\text{discard out-of-range threads}.
+\]
+
+A block size such as 256 is a common practical starting point because it provides many threads per block while remaining within CUDA's block-size limits. The best block size is not universal, however; later chapters relate it to warp organization, resource usage, occupancy, and memory behavior.
+
+% ============================================================
+\section{Minimal Host--Device Vector Addition Workflow}
+% ============================================================
+
+The essential host-side code can be reduced to:
+
+\begin{lstlisting}
+float *A_d, *B_d, *C_d;
+size_t size = n * sizeof(float);
+
+cudaMalloc((void**)&A_d, size);
+cudaMalloc((void**)&B_d, size);
+cudaMalloc((void**)&C_d, size);
+
+cudaMemcpy(A_d, A_h, size, cudaMemcpyHostToDevice);
+cudaMemcpy(B_d, B_h, size, cudaMemcpyHostToDevice);
+
+int blockSize = 256;
+int numBlocks = (n + blockSize - 1) / blockSize;
+vecAddKernel<<<numBlocks, blockSize>>>(A_d, B_d, C_d, n);
+
+cudaMemcpy(C_h, C_d, size, cudaMemcpyDeviceToHost);
+
+cudaFree(A_d);
+cudaFree(B_d);
+cudaFree(C_d);
+\end{lstlisting}
+
+This code is worth remembering as the basic CUDA workflow:
+
+\[
+\begin{aligned}
+&\texttt{cudaMalloc} \\
+&\qquad\downarrow \\
+&\texttt{cudaMemcpyHostToDevice} \\
+&\qquad\downarrow \\
+&\text{kernel launch} \\
+&\qquad\downarrow \\
+&\texttt{cudaMemcpyDeviceToHost} \\
+&\qquad\downarrow \\
+&\texttt{cudaFree}.
+\end{aligned}
+\]
+
+Vector addition itself performs very little computation per element, so host--device transfer overhead can be significant. In larger CUDA applications, data is often kept on the GPU across multiple kernel launches instead of being copied back after every operation.
+
+% ============================================================
+\section{CUDA Compilation}
+% ============================================================
+
+A CUDA source file usually uses the extension \texttt{.cu}. It may contain both ordinary C/C++ host code and CUDA-specific device code.
+
+Ordinary C/C++ compilers do not directly understand all CUDA language extensions, such as
+
+\begin{itemize}
+    \item function qualifiers such as \texttt{\_\_global\_\_} and \texttt{\_\_device\_\_};
+    \item built-in thread variables such as \texttt{threadIdx} and \texttt{blockIdx};
+    \item CUDA Runtime API calls;
+    \item kernel-launch syntax such as \texttt{<<<...>>>}.
+\end{itemize}
+
+CUDA programs are therefore compiled through \texttt{nvcc}.
+
+\subsection{\texttt{nvcc}: NVIDIA CUDA Compiler Driver}
+
+\texttt{nvcc} stands for the \textbf{NVIDIA CUDA Compiler Driver}. It is the compiler driver used to build CUDA programs.
+
+The important point is that \texttt{nvcc} does not treat the entire \texttt{.cu} file as one ordinary CPU program. Instead, it coordinates the compilation of the two parts of a heterogeneous CUDA program:
+
+\[
+\boxed{
+\text{CUDA source}
+\rightarrow
+\text{host code}
++
+\text{device code}
+}
+\]
+
+The host portion is passed to a normal host C/C++ compiler, while the device portion is processed by NVIDIA's CUDA compilation toolchain.
+
+For example, the host compiler may be
+
+\begin{itemize}
+    \item Microsoft \texttt{cl.exe} on Windows;
+    \item \texttt{g++} on many Linux systems.
+\end{itemize}
+
+\subsection{PTX}
+
+\textbf{PTX} stands for \textbf{Parallel Thread Execution}. It is an NVIDIA-defined intermediate instruction representation for GPU programs.
+
+PTX is neither the original CUDA C/C++ source code nor the final machine code executed directly by the GPU. Instead, it is an intermediate representation between high-level CUDA code and hardware-specific GPU instructions.
+
+Conceptually,
+
+\[
+\boxed{
+\text{CUDA device code}
+\rightarrow
+\text{PTX}
+\rightarrow
+\text{GPU machine code}
+}
+\]
+
+This intermediate form allows the CUDA toolchain and driver to translate device code for a particular GPU architecture.
+
+\subsection{JIT Compilation}
+
+\textbf{JIT} means \textbf{Just-In-Time compilation}. In the simplified compilation path used in this chapter, PTX is converted by the NVIDIA driver into GPU-executable machine code for the GPU that is actually present in the system.
+
+Thus, the main compilation flow is
+
+\[
+\begin{aligned}
+\text{CUDA C/C++ source (.cu)}
+&\rightarrow
+\texttt{nvcc}
+\\[3pt]
+&\rightarrow
+\begin{cases}
+\text{host code}
+\rightarrow
+\text{host C/C++ compiler}
+\rightarrow
+\text{CPU code},
+\\[4pt]
+\text{device code}
+\rightarrow
+\text{PTX}
+\rightarrow
+\text{driver JIT compiler}
+\rightarrow
+\text{GPU machine code}.
+\end{cases}
+\end{aligned}
+\]
+
+The key idea is that one CUDA source program ultimately contains code for two different processors:
+
+\[
+\boxed{
+\text{CPU executes host code}
+\qquad
+\text{GPU executes device code}
+}
+\]
+
+This is another manifestation of heterogeneous computing: CUDA programming is not simply ``writing code for a GPU,'' but coordinating CPU execution with GPU execution in one application.
+
+\subsection{Typical Compilation Command}
+
+A minimal CUDA program can be compiled with
+
+\begin{lstlisting}[language=bash]
+nvcc vec_add.cu -o vec_add
+\end{lstlisting}
+
+where
+
+\begin{itemize}
+    \item \texttt{vec\_add.cu} is the CUDA source file;
+    \item \texttt{-o vec\_add} specifies the output executable name;
+    \item \texttt{nvcc} coordinates the host and device compilation stages.
+\end{itemize}
+
+For Chapter 2, the essential model to remember is
+
+\[
+\boxed{
+\texttt{.cu}
+\rightarrow
+\texttt{nvcc}
+\rightarrow
+\text{host compilation}
++
+\text{device compilation}
+}
+\]
+
+together with the device-side path
+
+\[
+\boxed{
+\text{CUDA device code}
+\rightarrow
+\text{PTX}
+\rightarrow
+\text{GPU-executable code}.
+}
+\]
+
+
+\end{document}

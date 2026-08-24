@@ -10,3 +10,12 @@
 # OS files
 .DS_Store
 Thumbs.db
+# C/C++ and CUDA build files
+*.exe
+*.obj
+*.exp
+*.lib
+*.pdb
+
+# Build directories
+build/
