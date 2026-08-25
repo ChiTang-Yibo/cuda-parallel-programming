@@ -1,0 +1,558 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[hidelinks]{hyperref}
+
+\lstdefinestyle{cudaStyle}{
+    language=C++,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\bfseries\color{blue!60!black},
+    commentstyle=\itshape\color{gray!70!black},
+    stringstyle=\color{red!60!black},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    frame=single,
+    breaklines=true,
+    columns=fullflexible,
+    showstringspaces=false,
+    tabsize=4
+}
+\lstset{style=cudaStyle}
+
+\title{CUDA Chapter 3 Notes: Multidimensional Grids, Data Mapping, Image Blur, and Matrix Multiplication}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Multidimensional Grid Organization}
+
+Chapter 3 extends the one-dimensional thread mapping from vector addition to two- and three-dimensional data. The basic CUDA hierarchy remains
+
+\[
+\text{Kernel launch}
+\rightarrow
+\text{Grid}
+\rightarrow
+\text{Blocks}
+\rightarrow
+\text{Threads}.
+\]
+
+A grid and a block may each have up to three dimensions. CUDA provides four built-in variables for describing this hierarchy:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Variable & Meaning \\
+\midrule
+\texttt{gridDim} & grid dimensions, measured in blocks \\
+\texttt{blockDim} & block dimensions, measured in threads \\
+\texttt{blockIdx} & index of the current block \\
+\texttt{threadIdx} & index of the current thread inside its block \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Each variable has \texttt{x}, \texttt{y}, and \texttt{z} components. For example,
+
+\begin{lstlisting}
+dim3 dimGrid(2, 2, 1);
+dim3 dimBlock(4, 2, 2);
+
+KernelFunction<<<dimGrid, dimBlock>>>(...);
+\end{lstlisting}
+
+creates
+
+\[
+2\times2\times1=4
+\]
+
+blocks, with
+
+\[
+4\times2\times2=16
+\]
+
+threads in each block, for a total of
+
+\[
+4\times16=64
+\]
+
+threads.
+
+Conceptually, a multidimensional grid is simply a multidimensional array of blocks, while each block is a multidimensional array of threads. The dimensions are organizational coordinates: they make it convenient to map threads to naturally multidimensional data such as images, matrices, and volumes.
+
+The total number of threads in one block must satisfy the hardware limit. A common CUDA limit is
+
+\[
+\texttt{blockDim.x}
+\times
+\texttt{blockDim.y}
+\times
+\texttt{blockDim.z}
+\le 1024.
+\]
+
+Unused dimensions are set to \(1\).
+
+\subsection{Two-dimensional thread coordinates}
+
+Images and matrices are naturally two-dimensional, so a two-dimensional grid of two-dimensional blocks is a convenient mapping.
+
+For a thread processing a two-dimensional data set,
+
+\begin{lstlisting}
+int col = blockIdx.x * blockDim.x + threadIdx.x;
+int row = blockIdx.y * blockDim.y + threadIdx.y;
+\end{lstlisting}
+
+The corresponding coordinates are
+
+\[
+\boxed{
+\begin{aligned}
+col &= \texttt{blockIdx.x}\times\texttt{blockDim.x}
+      +\texttt{threadIdx.x},\\
+row &= \texttt{blockIdx.y}\times\texttt{blockDim.y}
+      +\texttt{threadIdx.y}.
+\end{aligned}
+}
+\]
+
+Thus, the \(x\)-direction usually maps to columns and the \(y\)-direction maps to rows.
+
+For example, with \(16\times16\) blocks, a thread with
+
+\[
+\texttt{blockIdx}=(0,1),
+\qquad
+\texttt{threadIdx}=(0,0)
+\]
+
+has
+
+\[
+col=0,
+\qquad
+row=16,
+\]
+
+so it is responsible for the data element at \((row,col)=(16,0)\).
+
+\section{Mapping Multidimensional Data to Linear Memory}
+
+Although an image or matrix is conceptually two-dimensional, memory is addressed linearly. In C and C++, ordinary multidimensional arrays use \textbf{row-major order}: all elements of one row are stored consecutively before the next row begins.
+
+For a two-dimensional array with \texttt{width} columns,
+
+\[
+\boxed{
+idx = row\times width + col
+}
+\]
+
+maps the two-dimensional coordinate \((row,col)\) to a one-dimensional offset.
+
+Consider the \(4\times4\) matrix
+
+\[
+\begin{bmatrix}
+M_{0,0} & M_{0,1} & M_{0,2} & M_{0,3}\\
+M_{1,0} & M_{1,1} & M_{1,2} & M_{1,3}\\
+M_{2,0} & M_{2,1} & M_{2,2} & M_{2,3}\\
+M_{3,0} & M_{3,1} & M_{3,2} & M_{3,3}
+\end{bmatrix}.
+\]
+
+In row-major memory it is stored as
+
+\[
+\begin{aligned}
+&M_{0,0},M_{0,1},M_{0,2},M_{0,3},\\
+&M_{1,0},M_{1,1},M_{1,2},M_{1,3},\\
+&M_{2,0},M_{2,1},M_{2,2},M_{2,3},\\
+&M_{3,0},M_{3,1},M_{3,2},M_{3,3}.
+\end{aligned}
+\]
+
+For example,
+
+\[
+M_{2,1}
+\longrightarrow
+2\times4+1
+=
+9,
+\]
+
+so \(M_{2,1}\) is stored at \texttt{M[9]}.
+
+This same conversion is used repeatedly in CUDA kernels:
+
+\begin{lstlisting}
+int idx = row * width + col;
+\end{lstlisting}
+
+\section{Covering a Two-dimensional Image with Blocks}
+
+Suppose an image has
+
+\[
+width=76,
+\qquad
+height=62,
+\]
+
+and each block contains
+
+\[
+16\times16
+\]
+
+threads.
+
+The required grid dimensions are
+
+\[
+N_x
+=
+\left\lceil\frac{76}{16}\right\rceil
+=
+5,
+\qquad
+N_y
+=
+\left\lceil\frac{62}{16}\right\rceil
+=
+4.
+\]
+
+Therefore, the kernel launch uses a \(5\times4\) grid of blocks:
+
+\begin{lstlisting}
+dim3 dimBlock(16, 16);
+dim3 dimGrid((76 + 15) / 16,
+             (62 + 15) / 16);
+\end{lstlisting}
+
+The logical thread region covers
+
+\[
+80\times64
+\]
+
+positions, while the real image contains only
+
+\[
+76\times62
+\]
+
+pixels.
+
+This produces four types of block regions:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Region & Valid part of the block & Valid threads \\
+\midrule
+Interior & fully inside the image & \(16\times16=256\) \\
+Right boundary & only 12 valid columns & \(12\times16=192\) \\
+Bottom boundary & only 14 valid rows & \(16\times14=224\) \\
+Lower-right corner & 12 columns and 14 rows & \(12\times14=168\) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The interior blocks are completely covered by valid image pixels. The blocks on the right, bottom, and lower-right corner contain some threads whose coordinates fall outside the image.
+
+Therefore, every image-processing kernel needs the two-dimensional boundary condition
+
+\begin{lstlisting}
+if (col < width && row < height) {
+    // process pixel(row, col)
+}
+\end{lstlisting}
+
+This is the two-dimensional counterpart of the one-dimensional check \texttt{if (i < n)}.
+
+\section{Image Blur}
+
+\subsection{Basic idea}
+
+A simple image blur replaces each output pixel by the average of a local neighborhood around the corresponding input pixel.
+
+For a \(3\times3\) blur centered at \((row,col)\),
+
+\[
+P_{\mathrm{out}}(row,col)
+=
+\frac{1}{N_{\mathrm{valid}}}
+\sum_{\text{valid neighbors}}
+P_{\mathrm{in}}(r,c).
+\]
+
+For an interior pixel such as \((25,50)\), the \(3\times3\) neighborhood is
+
+\[
+\begin{aligned}
+&(24,49),\ (24,50),\ (24,51),\\
+&(25,49),\ (25,50),\ (25,51),\\
+&(26,49),\ (26,50),\ (26,51).
+\end{aligned}
+\]
+
+The thread responsible for output pixel \((25,50)\) reads these nine values, adds them, divides by \(9\), and writes one blurred output pixel.
+
+If \texttt{BLUR\_SIZE} denotes the radius of the neighborhood, the patch width is
+
+\[
+2\times\texttt{BLUR\_SIZE}+1.
+\]
+
+For example,
+
+\begin{center}
+\begin{tabular}{cc}
+\toprule
+\texttt{BLUR\_SIZE} & Patch size \\
+\midrule
+1 & \(3\times3\) \\
+2 & \(5\times5\) \\
+3 & \(7\times7\) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The number of candidate input pixels examined by an interior thread is
+
+\[
+(2\times\texttt{BLUR\_SIZE}+1)^2.
+\]
+
+\subsection{Core blur kernel}
+
+One thread still computes one output pixel. The main difference from grayscale conversion is that the thread must loop over neighboring input pixels.
+
+\begin{lstlisting}
+#define BLUR_SIZE 1
+
+__global__
+void blurKernel(const unsigned char *in,
+                unsigned char *out,
+                int width,
+                int height)
+{
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (col < width && row < height) {
+        int sum = 0;
+        int count = 0;
+
+        for (int dy = -BLUR_SIZE; dy <= BLUR_SIZE; ++dy) {
+            for (int dx = -BLUR_SIZE; dx <= BLUR_SIZE; ++dx) {
+                int r = row + dy;
+                int c = col + dx;
+
+                if (r >= 0 && r < height &&
+                    c >= 0 && c < width) {
+                    sum += in[r * width + c];
+                    ++count;
+                }
+            }
+        }
+
+        out[row * width + col] =
+            static_cast<unsigned char>(sum / count);
+    }
+}
+\end{lstlisting}
+
+The two key variables are:
+
+\begin{itemize}
+    \item \texttt{sum}: accumulated value of all valid neighboring pixels;
+    \item \texttt{count}: number of valid pixels actually included in the average.
+\end{itemize}
+
+\subsection{Boundary conditions}
+
+Pixels near an image boundary do not have a complete \(3\times3\) neighborhood.
+
+For a non-corner edge pixel, six positions are valid. For example, a pixel on the top edge but away from the corners has no row above it, so only two image rows contribute:
+
+\[
+3\times2=6
+\]
+
+valid pixels.
+
+For a corner pixel such as \((0,0)\), only
+
+\[
+(0,0),\ (0,1),\ (1,0),\ (1,1)
+\]
+
+are valid, so the average uses only four pixels.
+
+Thus, for a \(3\times3\) blur,
+
+\begin{center}
+\begin{tabular}{lc}
+\toprule
+Pixel location & Valid pixels \\
+\midrule
+Interior & 9 \\
+Non-corner edge & 6 \\
+Corner & 4 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This is why the kernel must test every candidate neighbor before reading it, and why the final divisor must be \texttt{count} rather than a fixed value such as \(9\).
+
+\section{Matrix Multiplication}
+
+\subsection{Mathematical operation}
+
+For
+
+\[
+M\in\mathbb{R}^{I\times J},
+\qquad
+N\in\mathbb{R}^{J\times K},
+\]
+
+the product
+
+\[
+P=MN
+\]
+
+has shape
+
+\[
+P\in\mathbb{R}^{I\times K}.
+\]
+
+Each output element is the dot product of one row of \(M\) and one column of \(N\):
+
+\[
+\boxed{
+P_{row,col}
+=
+\sum_{k=0}^{J-1}
+M_{row,k}N_{k,col}
+}
+\]
+
+For example, if the matrices are \(4\times4\),
+
+\[
+P_{0,0}
+=
+M_{0,0}N_{0,0}
++
+M_{0,1}N_{1,0}
++
+M_{0,2}N_{2,0}
++
+M_{0,3}N_{3,0}.
+\]
+
+The computation of one output element is independent of the computation of the other output elements. Therefore, CUDA can assign one thread to each element of \(P\).
+
+\subsection{Mapping one thread to one output element}
+
+A two-dimensional CUDA thread computes its output coordinate using
+
+\begin{lstlisting}
+int row = blockIdx.y * blockDim.y + threadIdx.y;
+int col = blockIdx.x * blockDim.x + threadIdx.x;
+\end{lstlisting}
+
+The thread at \((row,col)\) computes only
+
+\[
+P_{row,col}.
+\]
+
+For square matrices of width \texttt{Width}, the core kernel is
+
+\begin{lstlisting}
+__global__
+void matrixMulKernel(const float *M,
+                     const float *N,
+                     float *P,
+                     int Width)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < Width && col < Width) {
+        float value = 0.0f;
+
+        for (int k = 0; k < Width; ++k) {
+            value += M[row * Width + k]
+                   * N[k * Width + col];
+        }
+
+        P[row * Width + col] = value;
+    }
+}
+\end{lstlisting}
+
+The row-major memory accesses are
+
+\[
+M_{row,k}
+\longleftrightarrow
+\texttt{M[row * Width + k]},
+\]
+
+\[
+N_{k,col}
+\longleftrightarrow
+\texttt{N[k * Width + col]},
+\]
+
+and
+
+\[
+P_{row,col}
+\longleftrightarrow
+\texttt{P[row * Width + col]}.
+\]
+
+For the \(4\times4\) example, the thread computing \(P_{0,0}\) reads
+
+\[
+M[0],\ M[1],\ M[2],\ M[3]
+\]
+
+from the first row of \(M\), and
+
+\[
+N[0],\ N[4],\ N[8],\ N[12]
+\]
+
+from the first column of \(N\). It accumulates the four products and finally writes the result to
+
+\[
+P[0].
+\]
+
+If a block contains \(16\times16\) threads, that block can compute a \(16\times16\) tile of output elements: each thread produces one element inside the tile. This block-to-output-tile mapping is the basis for later optimized matrix multiplication kernels.
+
+The basic kernel is correct but not optimized. Neighboring threads repeatedly read many of the same matrix elements from global memory, and the accesses down a column of \(N\) are strided in row-major storage. Later shared-memory tiling improves data reuse and reduces repeated global-memory traffic.
+
+\end{document}
