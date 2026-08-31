@@ -1,13 +1,13 @@
-# CUDA Chapter 4 Exercises  
+# CUDA Chapter 4 Exercises
 ## Complete Questions, Answers, and Explanations
 
-This document contains three parts for every exercise:
+This document contains the complete questions, final answers, and concise explanations for the Chapter 4 exercises.
 
-1. **Complete question**
-2. **Final answer**
-3. **Detailed explanation**
+Unless otherwise stated:
 
-Unless otherwise stated, one CUDA warp contains 32 threads.
+```math
+1\ \text{warp} = 32\ \text{threads}.
+```
 
 ---
 
@@ -15,7 +15,7 @@ Unless otherwise stated, one CUDA warp contains 32 threads.
 
 ## Complete question
 
-Consider the following CUDA kernel and the corresponding host function that calls it:
+Consider the following CUDA kernel and host function:
 
 ```cpp
 __global__ void foo_kernel(int* a, int* b) {
@@ -47,58 +47,13 @@ void foo(int* a_d, int* b_d) {
 }
 ```
 
-Answer the following questions.
+Answer:
 
-### (a)
-
-What is the number of warps per block?
-
-### (b)
-
-What is the number of warps in the grid?
-
-### (c)
-
-For the statement on line 04:
-
-```cpp
-b[i] = a[i] + 1;
-```
-
-1. How many warps in the grid are active?
-2. How many warps in the grid are divergent?
-3. What is the SIMD efficiency, in percent, of warp 0 of block 0?
-4. What is the SIMD efficiency, in percent, of warp 1 of block 0?
-5. What is the SIMD efficiency, in percent, of warp 3 of block 0?
-
-### (d)
-
-For the statement on line 07:
-
-```cpp
-a[i] = b[i] * 2;
-```
-
-1. How many warps in the grid are active?
-2. How many warps in the grid are divergent?
-3. What is the SIMD efficiency, in percent, of warp 0 of block 0?
-
-### (e)
-
-For the loop on line 09:
-
-```cpp
-for (unsigned int j = 0;
-     j < 5 - (i % 3);
-     ++j) {
-    b[i] += j;
-}
-```
-
-1. How many iterations have no divergence?
-2. How many iterations have divergence?
-
----
+1. How many warps are in one block?
+2. How many warps are in the entire grid?
+3. For `b[i] = a[i] + 1`, how many warps are active and divergent, and what are the SIMD efficiencies of warps 0, 1, and 3 of block 0?
+4. For `a[i] = b[i] * 2`, how many warps are active and divergent, and what is the SIMD efficiency of warp 0 of block 0?
+5. For the loop, how many iterations are non-divergent and how many are divergent?
 
 ## Final answers
 
@@ -117,275 +72,148 @@ for (unsigned int j = 0;
 | (e)(i) | 3 iterations without divergence |
 | (e)(ii) | 2 iterations with divergence |
 
----
+## Explanation
 
-## Detailed explanation
+The block size is 128 threads. The number of blocks is
 
-### Step 1: Determine the launch configuration
-
-The block size is 128 threads:
-
-\[
-\text{threads per block}=128.
-\]
-
-The number of blocks is
-
-\[
-\frac{N+128-1}{128}
+```math
+N_{\text{blocks}}
 =
-\frac{1024+127}{128}
+\frac{1024+128-1}{128}
 =
 8.
-\]
+```
 
-Therefore, the grid contains 8 blocks and
+Therefore the grid contains
 
-\[
+```math
 8\times128=1024
-\]
+```
 
 threads.
 
-Because one warp contains 32 threads, each block contains
+Since a warp contains 32 threads,
 
-\[
+```math
 \frac{128}{32}=4
-\]
+```
 
-warps.
+warps are created per block, and
 
-The four warps in one block are:
+```math
+8\times4=32
+```
+
+warps are created in the grid.
+
+The four warps in each block are:
 
 - warp 0: `threadIdx.x = 0–31`
 - warp 1: `threadIdx.x = 32–63`
 - warp 2: `threadIdx.x = 64–95`
 - warp 3: `threadIdx.x = 96–127`
 
-The complete grid contains
+### Part (c)
 
-\[
-8\times4=32
-\]
-
-warps.
-
----
-
-### Part (a): Number of warps per block
-
-\[
-\frac{128}{32}=4.
-\]
-
-Therefore,
-
-\[
-\boxed{4\text{ warps per block}}.
-\]
-
----
-
-### Part (b): Number of warps in the grid
-
-\[
-8\text{ blocks}\times4\text{ warps per block}
-=
-32.
-\]
-
-Therefore,
-
-\[
-\boxed{32\text{ warps in the grid}}.
-\]
-
----
-
-### Part (c): Statement on line 04
-
-The statement is controlled by
+The first condition is
 
 ```cpp
 if (threadIdx.x < 40 || threadIdx.x >= 104)
 ```
 
-The condition depends only on `threadIdx.x`, so the same pattern occurs in every block.
+Within each block:
 
-The threads that execute line 04 are:
-
-\[
-0\text{--}39
-\]
-
-and
-
-\[
-104\text{--}127.
-\]
-
-The warp behavior within each block is:
-
-| Warp | Thread indices | Active threads | Behavior |
+| Warp | Threads | Active threads | State |
 |---|---:|---:|---|
 | warp 0 | 0–31 | 32 | fully active |
 | warp 1 | 32–63 | 8 | divergent |
-| warp 2 | 64–95 | 0 | fully inactive |
+| warp 2 | 64–95 | 0 | inactive |
 | warp 3 | 96–127 | 24 | divergent |
 
-A warp is active if at least one thread executes the statement. Therefore, every block has three active warps: warps 0, 1, and 3.
+Thus each block has 3 active warps and 2 divergent warps:
 
-\[
-8\times3=24.
-\]
+```math
+8\times3=24
+```
 
-Thus,
+active warps, and
 
-\[
-\boxed{24\text{ active warps}}.
-\]
+```math
+8\times2=16
+```
 
-A warp is divergent if some threads execute the statement and other threads in the same warp do not. In each block, warps 1 and 3 are divergent.
+divergent warps.
 
-\[
-8\times2=16.
-\]
+For one instruction, the simplified SIMD efficiency is
 
-Thus,
-
-\[
-\boxed{16\text{ divergent warps}}.
-\]
-
-For a particular instruction, the simplified SIMD efficiency is
-
-\[
+```math
 \text{SIMD efficiency}
 =
-\frac{\text{active threads}}{32}
-\times100\%.
-\]
+\frac{\text{active threads}}{32}\times100\%.
+```
 
-For warp 0:
+Therefore:
 
-\[
-\frac{32}{32}\times100\%=100\%.
-\]
+```math
+\text{warp 0: }
+\frac{32}{32}\times100\%
+=
+100\%.
+```
 
-Therefore,
+```math
+\text{warp 1: }
+\frac{8}{32}\times100\%
+=
+25\%.
+```
 
-\[
-\boxed{100\%}.
-\]
+```math
+\text{warp 3: }
+\frac{24}{32}\times100\%
+=
+75\%.
+```
 
-For warp 1, only threads 32–39 execute the statement, so 8 threads are active:
+### Part (d)
 
-\[
-\frac{8}{32}\times100\%=25\%.
-\]
-
-Therefore,
-
-\[
-\boxed{25\%}.
-\]
-
-For warp 3, only threads 104–127 execute the statement, so 24 threads are active:
-
-\[
-\frac{24}{32}\times100\%=75\%.
-\]
-
-Therefore,
-
-\[
-\boxed{75\%}.
-\]
-
----
-
-### Part (d): Statement on line 07
-
-The condition is
+The second condition is
 
 ```cpp
 if (i % 2 == 0)
 ```
 
-where
+Because each warp contains alternating even and odd global indices, every warp contains 16 active threads and 16 inactive threads.
 
-```cpp
-i = blockIdx.x * blockDim.x + threadIdx.x;
+Therefore all 32 warps are active and all 32 warps diverge.
+
+For warp 0:
+
+```math
+\frac{16}{32}\times100\%
+=
+50\%.
 ```
 
-Since the block size is 128, an even number, every warp contains alternating even and odd global indices.
+### Part (e)
 
-Therefore, each warp contains:
-
-- 16 threads with even `i`;
-- 16 threads with odd `i`.
-
-Every warp has at least one active thread, so all 32 warps in the grid are active:
-
-\[
-\boxed{32\text{ active warps}}.
-\]
-
-Every warp contains both active and inactive threads, so every warp diverges:
-
-\[
-\boxed{32\text{ divergent warps}}.
-\]
-
-For warp 0 of block 0, 16 of the 32 threads execute line 07:
-
-\[
-\frac{16}{32}\times100\%=50\%.
-\]
-
-Therefore,
-
-\[
-\boxed{50\%}.
-\]
-
----
-
-### Part (e): Loop on line 09
-
-The loop condition is
+The loop bound is
 
 ```cpp
-j < 5 - (i % 3)
+5 - (i % 3)
 ```
 
-The number of iterations depends on `i % 3`:
+so:
 
-| \(i\bmod3\) | Number of iterations |
+| `i % 3` | Iterations |
 |---:|---:|
 | 0 | 5 |
 | 1 | 4 |
 | 2 | 3 |
 
-For the iterations with
+For `j = 0, 1, 2`, all threads are still executing the loop, so these three iterations are non-divergent.
 
-\[
-j=0,\ 1,\ 2,
-\]
-
-all threads are still inside the loop. Therefore, these three iterations do not diverge.
-
-\[
-\boxed{3\text{ iterations without divergence}}.
-\]
-
-For the iteration with \(j=3\), only threads requiring 4 or 5 iterations remain active. For the iteration with \(j=4\), only threads requiring 5 iterations remain active.
-
-Therefore,
-
-\[
-\boxed{2\text{ iterations with divergence}}.
-\]
+For `j = 3` and `j = 4`, only subsets of the warp remain active, so these two iterations are divergent.
 
 ---
 
@@ -393,53 +221,47 @@ Therefore,
 
 ## Complete question
 
-For a vector addition, assume that:
+For vector addition:
 
-- the vector length is 2000;
-- each thread calculates one output element;
-- the thread block size is 512 threads.
+- vector length = 2000;
+- one thread computes one output element;
+- block size = 512 threads.
 
-How many threads will be in the grid?
-
----
+How many threads are launched in the grid?
 
 ## Final answer
 
-\[
-\boxed{2048\text{ threads}}
-\]
+```math
+\boxed{2048\ \text{threads}}
+```
 
----
+## Explanation
 
-## Detailed explanation
+The required number of blocks is
 
-The number of required blocks is
-
-\[
-\left\lceil\frac{2000}{512}\right\rceil
+```math
+\left\lceil
+\frac{2000}{512}
+\right\rceil
 =
 4.
-\]
+```
 
-Each block contains 512 threads, so the total number of launched threads is
+Therefore,
 
-\[
-4\times512=2048.
-\]
+```math
+4\times512=2048
+```
 
-Therefore, the grid contains
+threads are launched.
 
-\[
-\boxed{2048\text{ threads}}.
-\]
+The number of extra threads is
 
-There are
+```math
+2048-2000=48.
+```
 
-\[
-2048-2000=48
-\]
-
-extra threads. These threads must be prevented from accessing data outside the vector, typically with a boundary check:
+A boundary check prevents these threads from accessing invalid elements:
 
 ```cpp
 int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -455,58 +277,36 @@ if (i < 2000) {
 
 ## Complete question
 
-For the vector-addition configuration in Problem 2, how many warps are expected to have divergence due to the boundary check on the vector length?
-
----
+For the configuration in Problem 2, how many warps diverge because of the boundary check?
 
 ## Final answer
 
-\[
-\boxed{1\text{ divergent warp}}
-\]
+```math
+\boxed{1\ \text{divergent warp}}
+```
 
----
+## Explanation
 
-## Detailed explanation
+The grid contains
 
-The grid contains 2048 threads. Therefore, the number of warps is
+```math
+\frac{2048}{32}=64
+```
 
-\[
-\frac{2048}{32}=64.
-\]
+warps.
 
-The valid thread indices are
+The valid thread indices are 0–1999.
 
-\[
-0\text{--}1999.
-\]
+Warp 62 contains threads 1984–2015:
 
-Warp 62 contains global thread indices
+- 1984–1999 are valid;
+- 2000–2015 are invalid.
 
-\[
-1984\text{--}2015.
-\]
+Therefore warp 62 diverges.
 
-Within this warp:
+Warp 63 contains threads 2016–2047. All of them fail the boundary condition, so the warp is fully inactive for the vector-addition statement but is not divergent.
 
-- threads 1984–1999 are valid;
-- threads 2000–2015 are outside the vector.
-
-Therefore, warp 62 diverges.
-
-Warp 63 contains global thread indices
-
-\[
-2016\text{--}2047.
-\]
-
-All threads in warp 63 fail the boundary condition. Since all threads follow the same path, this warp does not diverge; it is simply fully inactive for the vector-addition statement.
-
-Therefore,
-
-\[
-\boxed{1\text{ divergent warp}}.
-\]
+Thus only one warp diverges.
 
 ---
 
@@ -514,74 +314,55 @@ Therefore,
 
 ## Complete question
 
-Consider a hypothetical block with 8 threads executing a section of code before reaching a barrier. The threads require the following amounts of time, in microseconds, to execute the section:
+A hypothetical block contains 8 threads. Their execution times before a barrier are:
 
-\[
-2.0,\ 2.3,\ 3.0,\ 2.8,\ 2.4,\ 1.9,\ 2.6,\ 2.9.
-\]
+```text
+2.0, 2.3, 3.0, 2.8, 2.4, 1.9, 2.6, 2.9 microseconds
+```
 
-The threads spend the rest of their time waiting for the barrier.
-
-What percentage of the threads' total execution time is spent waiting for the barrier?
-
----
+What percentage of the threads' total elapsed time is spent waiting at the barrier?
 
 ## Final answer
 
-\[
+```math
 \boxed{17.08\%}
-\]
+```
 
----
+## Explanation
 
-## Detailed explanation
+The slowest thread reaches the barrier after
 
-The barrier can release only when the slowest thread arrives. The maximum execution time is
-
-\[
+```math
 3.0\ \mu\text{s}.
-\]
+```
 
-The waiting time of each thread is its difference from 3.0 microseconds:
+The total waiting time is
 
-\[
+```math
 \begin{aligned}
-T_{\mathrm{wait}}
+T_{\text{wait}}
 ={}&(3.0-2.0)+(3.0-2.3)+(3.0-3.0)\\
 &+(3.0-2.8)+(3.0-2.4)+(3.0-1.9)\\
-&+(3.0-2.6)+(3.0-2.9).
+&+(3.0-2.6)+(3.0-2.9)\\
+={}&4.1\ \mu\text{s}.
 \end{aligned}
-\]
+```
 
-Thus,
+The total elapsed thread time is
 
-\[
-T_{\mathrm{wait}}
+```math
+8\times3.0
 =
-1.0+0.7+0+0.2+0.6+1.1+0.4+0.1
-=
-4.1\ \mu\text{s}.
-\]
-
-Each of the 8 threads has a total elapsed time of 3.0 microseconds before leaving the barrier. Therefore, the total thread execution time is
-
-\[
-8\times3.0=24.0\ \mu\text{s}.
-\]
-
-The waiting percentage is
-
-\[
-\frac{4.1}{24.0}\times100\%
-=
-17.08\%.
-\]
+24.0\ \mu\text{s}.
+```
 
 Therefore,
 
-\[
-\boxed{17.08\%}.
-\]
+```math
+\frac{4.1}{24.0}\times100\%
+=
+17.08\%.
+```
 
 ---
 
@@ -589,29 +370,21 @@ Therefore,
 
 ## Complete question
 
-A CUDA programmer says that if they launch a kernel with only 32 threads in each block, they can leave out the `__syncthreads()` instruction wherever barrier synchronization is needed.
+A programmer says that if a kernel uses only 32 threads per block, `__syncthreads()` can always be removed wherever barrier synchronization is needed.
 
-Do you think this is a good idea? Explain.
-
----
+Is this a good idea?
 
 ## Final answer
 
-\[
-\boxed{\text{No, this is not generally a safe idea.}}
-\]
+**No. This is not generally safe.**
 
----
+## Explanation
 
-## Detailed explanation
+A 32-thread block normally consists of one warp, but program correctness should not rely on the assumption that all threads always advance in strict lockstep.
 
-A block with 32 threads normally contains one warp. However, this does not mean that synchronization can always be removed.
+On Volta and later architectures, independent thread scheduling makes such assumptions particularly unsafe.
 
-First, CUDA program correctness should not depend on the assumption that every thread in a warp always advances in strict lockstep. On Volta and later architectures, independent thread scheduling makes this assumption especially unsafe.
-
-Second, when threads exchange data through shared memory, one thread may read data written by another thread. Synchronization is needed to ensure that the required writes have completed and become visible before the reads occur.
-
-For example:
+If threads exchange data through shared memory, explicit synchronization may still be required:
 
 ```cpp
 __shared__ float s[32];
@@ -624,11 +397,11 @@ output[threadIdx.x] =
     s[(threadIdx.x + 1) % 32];
 ```
 
-Without a synchronization operation, a thread may read a shared-memory location before the responsible thread has completed the write.
+For synchronization that is strictly warp-local, `__syncwarp()` may be appropriate.
 
-For communication that is strictly limited to one warp, `__syncwarp()` may be sufficient. For block-wide synchronization, `__syncthreads()` should be used.
+For block-wide synchronization, use `__syncthreads()`.
 
-Therefore, a block size of 32 does not justify automatically deleting synchronization instructions.
+A block size of 32 does not by itself justify removing synchronization.
 
 ---
 
@@ -636,52 +409,42 @@ Therefore, a block size of 32 does not justify automatically deleting synchroniz
 
 ## Complete question
 
-If a CUDA device's SM can accommodate up to 1536 threads and up to 4 thread blocks, which of the following block configurations results in the largest number of threads residing in the SM?
+An SM supports:
 
-1. 128 threads per block
-2. 256 threads per block
-3. 512 threads per block
-4. 1024 threads per block
+- at most 1536 threads;
+- at most 4 resident blocks.
 
----
+Which block size gives the largest number of resident threads?
+
+1. 128 threads/block
+2. 256 threads/block
+3. 512 threads/block
+4. 1024 threads/block
 
 ## Final answer
 
-\[
-\boxed{\text{512 threads per block}}
-\]
+```math
+\boxed{512\ \text{threads per block}}
+```
 
----
+## Explanation
 
-## Detailed explanation
-
-The number of resident blocks is limited by both:
-
-- the maximum of 4 blocks per SM;
-- the maximum of 1536 threads per SM.
-
-For each block size:
-
-| Threads per block | Maximum resident blocks | Resident threads |
+| Threads/block | Resident blocks | Resident threads |
 |---:|---:|---:|
-| 128 | 4 | \(4\times128=512\) |
-| 256 | 4 | \(4\times256=1024\) |
-| 512 | 3 | \(3\times512=1536\) |
-| 1024 | 1 | \(1\times1024=1024\) |
+| 128 | 4 | 512 |
+| 256 | 4 | 1024 |
+| 512 | 3 | 1536 |
+| 1024 | 1 | 1024 |
 
-For 512 threads per block, three blocks fit exactly:
+For 512 threads per block:
 
-\[
-3\times512=1536.
-\]
+```math
+3\times512
+=
+1536.
+```
 
-This uses all available thread slots.
-
-Therefore,
-
-\[
-\boxed{\text{512 threads per block}}.
-\]
+This fills all available thread slots.
 
 ---
 
@@ -689,20 +452,12 @@ Therefore,
 
 ## Complete question
 
-Assume a device allows:
+A device supports:
 
 - up to 64 blocks per SM;
 - up to 2048 threads per SM.
 
-Indicate which of the following assignments per SM are possible. For each possible assignment, indicate the occupancy level.
-
-1. 8 blocks with 128 threads each
-2. 16 blocks with 64 threads each
-3. 32 blocks with 32 threads each
-4. 64 blocks with 32 threads each
-5. 32 blocks with 64 threads each
-
----
+Determine whether each assignment is possible and calculate occupancy.
 
 ## Final answers
 
@@ -714,90 +469,50 @@ Indicate which of the following assignments per SM are possible. For each possib
 | 64 blocks × 32 threads | Yes | 100% |
 | 32 blocks × 64 threads | Yes | 100% |
 
----
+## Explanation
 
-## Detailed explanation
+Occupancy is
 
-The occupancy is
-
-\[
+```math
 \text{occupancy}
 =
 \frac{\text{resident threads}}{2048}
 \times100\%.
-\]
+```
 
-### Assignment 1: 8 blocks with 128 threads each
+The resident-thread counts are:
 
-\[
-8\times128=1024.
-\]
-
-The block count and thread count are both within the device limits.
-
-\[
-\text{occupancy}
-=
-\frac{1024}{2048}\times100\%
-=
+```math
+8\times128=1024
+\quad\Rightarrow\quad
 50\%.
-\]
+```
 
-Therefore,
+```math
+16\times64=1024
+\quad\Rightarrow\quad
+50\%.
+```
 
-\[
-\boxed{\text{possible, }50\%}.
-\]
+```math
+32\times32=1024
+\quad\Rightarrow\quad
+50\%.
+```
 
-### Assignment 2: 16 blocks with 64 threads each
+```math
+64\times32=2048
+\quad\Rightarrow\quad
+100\%.
+```
 
-\[
-16\times64=1024.
-\]
+```math
+32\times64=2048
+\quad\Rightarrow\quad
+100\%.
+```
 
-Therefore,
-
-\[
-\boxed{\text{possible, }50\%}.
-\]
-
-### Assignment 3: 32 blocks with 32 threads each
-
-\[
-32\times32=1024.
-\]
-
-Therefore,
-
-\[
-\boxed{\text{possible, }50\%}.
-\]
-
-### Assignment 4: 64 blocks with 32 threads each
-
-\[
-64\times32=2048.
-\]
-
-This exactly reaches both the block limit and the thread limit.
-
-Therefore,
-
-\[
-\boxed{\text{possible, }100\%}.
-\]
-
-### Assignment 5: 32 blocks with 64 threads each
-
-\[
-32\times64=2048.
-\]
-
-Therefore,
-
-\[
-\boxed{\text{possible, }100\%}.
-\]
+All assignments satisfy both the block and thread limits.
 
 ---
 
@@ -805,162 +520,137 @@ Therefore,
 
 ## Complete question
 
-Consider a GPU with the following hardware limits:
+A GPU has:
 
 - 2048 threads per SM;
 - 32 blocks per SM;
-- 64K, or 65,536, registers per SM.
+- 65,536 registers per SM.
 
-For each of the following kernel configurations, determine whether the kernel can achieve full occupancy. If it cannot, identify the limiting factor.
+Determine whether each configuration can reach full occupancy:
 
-1. The kernel uses 128 threads per block and 30 registers per thread.
-2. The kernel uses 32 threads per block and 29 registers per thread.
-3. The kernel uses 256 threads per block and 34 registers per thread.
-
----
+1. 128 threads/block, 30 registers/thread
+2. 32 threads/block, 29 registers/thread
+3. 256 threads/block, 34 registers/thread
 
 ## Final answers
 
 | Configuration | Full occupancy? | Limiting factor |
 |---|---|---|
 | 128 threads/block, 30 registers/thread | Yes | None |
-| 32 threads/block, 29 registers/thread | No | Maximum blocks per SM |
+| 32 threads/block, 29 registers/thread | No | Block limit |
 | 256 threads/block, 34 registers/thread | No | Register capacity |
 
----
+## Explanation
 
-## Detailed explanation
+### Configuration 1
 
-Full occupancy requires 2048 resident threads while satisfying:
+Full occupancy requires
 
-- maximum 32 resident blocks;
-- maximum 65,536 registers.
+```math
+\frac{2048}{128}=16
+```
 
-### Configuration 1: 128 threads/block and 30 registers/thread
+blocks.
 
-The number of blocks required for 2048 resident threads is
+This satisfies the 32-block limit.
 
-\[
-\frac{2048}{128}=16.
-\]
+The required registers are
 
-Since
+```math
+2048\times30
+=
+61{,}440
+<
+65{,}536.
+```
 
-\[
-16\le32,
-\]
+Therefore full occupancy is possible.
 
-the block limit is satisfied.
+### Configuration 2
 
-The register requirement is
+Full occupancy would require
 
-\[
-2048\times30=61,440.
-\]
+```math
+\frac{2048}{32}
+=
+64
+```
 
-Since
+blocks.
 
-\[
-61,440\le65,536,
-\]
+The SM supports only 32 blocks, so at most
 
-the register limit is also satisfied.
-
-Therefore,
-
-\[
-\boxed{\text{full occupancy is possible}}.
-\]
-
-### Configuration 2: 32 threads/block and 29 registers/thread
-
-The number of blocks required for 2048 threads is
-
-\[
-\frac{2048}{32}=64.
-\]
-
-However, the hardware supports only 32 blocks per SM. Therefore, at most
-
-\[
-32\times32=1024
-\]
+```math
+32\times32
+=
+1024
+```
 
 threads can be resident.
 
-The occupancy is
+Thus,
 
-\[
-\frac{1024}{2048}\times100\%=50\%.
-\]
+```math
+\text{occupancy}
+=
+\frac{1024}{2048}
+=
+50\%.
+```
 
-The limiting factor is the number of block slots.
+The limiting factor is the maximum number of resident blocks.
 
-Therefore,
+### Configuration 3
 
-\[
-\boxed{\text{full occupancy is not possible; the block limit is the limiting factor}}.
-\]
+Full occupancy would require
 
-### Configuration 3: 256 threads/block and 34 registers/thread
+```math
+2048\times34
+=
+69{,}632
+```
 
-The number of blocks required for 2048 threads is
-
-\[
-\frac{2048}{256}=8.
-\]
-
-The block limit is satisfied, but the register requirement is
-
-\[
-2048\times34=69,632.
-\]
-
-Since
-
-\[
-69,632>65,536,
-\]
-
-full occupancy is impossible.
+registers, which exceeds the available 65,536 registers.
 
 Each block requires
 
-\[
-256\times34=8,704
-\]
+```math
+256\times34
+=
+8704
+```
 
 registers.
 
-The maximum number of complete resident blocks is
+Thus the maximum number of complete resident blocks is
 
-\[
+```math
 \left\lfloor
-\frac{65,536}{8,704}
+\frac{65{,}536}{8704}
 \right\rfloor
 =
 7.
-\]
+```
 
-Thus, the maximum resident thread count is
+The resident thread count is
 
-\[
-7\times256=1792.
-\]
-
-The maximum occupancy is
-
-\[
-\frac{1792}{2048}\times100\%
+```math
+7\times256
 =
-87.5\%.
-\]
+1792.
+```
 
 Therefore,
 
-\[
-\boxed{\text{full occupancy is not possible; register capacity is the limiting factor}}.
-\]
+```math
+\text{occupancy}
+=
+\frac{1792}{2048}\times100\%
+=
+87.5\%.
+```
+
+The limiting factor is register capacity.
 
 ---
 
@@ -968,60 +658,40 @@ Therefore,
 
 ## Complete question
 
-A student says that they successfully multiplied two \(1024\times1024\) matrices using a matrix-multiplication kernel with \(32\times32\) thread blocks.
+A student claims to have multiplied two $1024\times1024$ matrices with a CUDA kernel using a $32\times32$ thread block.
 
-The CUDA device permits:
+The device supports:
 
 - at most 512 threads per block;
 - at most 8 blocks per SM.
 
-The student also states that each thread in a thread block calculates one element of the result matrix.
+Each thread computes one output element.
 
-What should your reaction be, and why?
-
----
+Is the launch configuration valid?
 
 ## Final answer
 
-The student's claim is inconsistent with the stated device limit because a \(32\times32\) block contains 1024 threads, which exceeds the device limit of 512 threads per block.
+**No. The launch configuration is invalid.**
 
-\[
-\boxed{32\times32=1024>512}
-\]
+## Explanation
 
-The launch configuration is therefore invalid on the stated device.
+A $32\times32$ block contains
 
----
-
-## Detailed explanation
-
-A two-dimensional thread block with dimensions
-
-```cpp
-dim3 block(32, 32);
+```math
+32\times32
+=
+1024
 ```
-
-contains
-
-\[
-32\times32=1024
-\]
 
 threads.
 
-However, the device permits no more than 512 threads in one block.
+But the device allows at most 512 threads per block:
 
-Therefore,
+```math
+1024>512.
+```
 
-\[
-1024>512,
-\]
-
-and the kernel launch configuration is illegal.
-
-The kernel would normally fail with an invalid launch configuration error.
-
-The statement that each thread computes one result element is not itself a problem. The problem is the selected block size.
+Therefore the launch is illegal on the stated device.
 
 A valid alternative is
 
@@ -1031,13 +701,15 @@ dim3 block(16, 16);
 
 which contains
 
-\[
-16\times16=256
-\]
+```math
+16\times16
+=
+256
+```
 
-threads per block.
+threads.
 
-For a \(1024\times1024\) output matrix, the corresponding grid is
+For a $1024\times1024$ output matrix:
 
 ```cpp
 dim3 grid(
@@ -1046,9 +718,9 @@ dim3 grid(
 );
 ```
 
-which produces a \(64\times64\) grid.
+which gives a $64\times64$ grid.
 
-Another valid option is
+Another valid block is:
 
 ```cpp
 dim3 block(32, 16);
@@ -1056,11 +728,13 @@ dim3 block(32, 16);
 
 because
 
-\[
-32\times16=512
-\]
+```math
+32\times16
+=
+512
+```
 
-threads per block, exactly matching the device limit.
+threads exactly match the device limit.
 
 ---
 
@@ -1093,4 +767,4 @@ threads per block, exactly matching the device limit.
 | 8(a) | Full occupancy is possible |
 | 8(b) | No; limited by blocks per SM |
 | 8(c) | No; limited by registers, maximum 87.5% occupancy |
-| 9 | Invalid configuration because \(32\times32=1024>512\) |
+| 9 | Invalid because 32 × 32 = 1024 > 512 threads/block |
