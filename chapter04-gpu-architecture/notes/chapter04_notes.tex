@@ -1,0 +1,963 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[hidelinks]{hyperref}
+
+\setlist[itemize]{leftmargin=1.6em,itemsep=0.25em,topsep=0.3em}
+\setlist[enumerate]{leftmargin=1.8em,itemsep=0.25em,topsep=0.3em}
+
+\lstset{
+    language=C++,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\bfseries,
+    commentstyle=\itshape,
+    numbers=none,
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=4
+}
+
+\title{CUDA Chapter 4 Notes:\\
+GPU Architecture, Warps, Scheduling, Divergence, and Occupancy}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{From CUDA Programming Model to GPU Hardware}
+
+Earlier chapters described CUDA programs using
+
+\[
+\text{grid}
+\rightarrow
+\text{blocks}
+\rightarrow
+\text{threads}.
+\]
+
+Chapter 4 explains how these logical CUDA objects are executed by the GPU hardware:
+
+\[
+\text{GPU}
+\rightarrow
+\text{SMs}
+\rightarrow
+\text{warps}
+\rightarrow
+\text{threads}.
+\]
+
+The main goal is to understand how thread blocks are mapped to streaming multiprocessors (SMs), how blocks are divided into warps, and how GPU hardware hides latency by scheduling many resident warps.
+
+\section{GPU Architecture and Streaming Multiprocessors}
+
+\subsection{High-level GPU organization}
+
+A CUDA-capable GPU contains many \textbf{streaming multiprocessors (SMs)}.
+
+Each SM contains three broad categories of hardware resources:
+
+\begin{itemize}
+    \item \textbf{Computation units}: arithmetic execution units that perform floating-point, integer, and other operations.
+    \item \textbf{Control units}: hardware for instruction scheduling, issue, and execution control.
+    \item \textbf{On-chip memory resources}: registers, shared memory, caches, and related structures.
+\end{itemize}
+
+All SMs can read from and write to the GPU's \textbf{global memory}. Global memory is large device memory shared by the whole GPU, while registers and shared memory are much faster on-chip resources associated with an SM.
+
+A useful simplified view is therefore
+
+\[
+\boxed{
+\text{GPU}
+=
+\text{many SMs}
++
+\text{global memory}
+}
+\]
+
+with
+
+\[
+\boxed{
+\text{SM}
+=
+\text{compute}
++
+\text{control}
++
+\text{on-chip memory}
+}
+\]
+
+\subsection{CPU versus GPU design philosophy}
+
+A CPU is mainly optimized for \textbf{low latency} for a relatively small number of instruction streams. It therefore uses complex control logic, large caches, branch prediction, and powerful independent cores.
+
+A GPU is mainly optimized for \textbf{high throughput}. Instead of making one thread extremely fast, it provides many execution resources and relies on massive thread-level parallelism.
+
+Therefore:
+
+\[
+\text{CPU: minimize latency}
+\qquad
+\text{GPU: maximize throughput}.
+\]
+
+\subsection{Global memory access}
+
+Memory allocated with \texttt{cudaMalloc} normally resides in device global memory:
+
+\begin{lstlisting}
+float *d_A = nullptr;
+cudaMalloc(&d_A, n * sizeof(float));
+\end{lstlisting}
+
+The pointer notation is important.
+
+\begin{itemize}
+    \item \texttt{d\_A} is the pointer variable. After \texttt{cudaMalloc}, it stores the device address of the allocated memory.
+    \item In the declaration \texttt{float *d\_A}, the \texttt{*} means that \texttt{d\_A} has type \texttt{float*}.
+    \item \texttt{*d\_A} means \textbf{dereference the pointer}: access the float value stored at the address contained in \texttt{d\_A}.
+    \item \texttt{\&d\_A} is the address of the pointer variable itself. Its type is conceptually \texttt{float**}.
+\end{itemize}
+
+This is why \texttt{cudaMalloc} receives \texttt{\&d\_A}: the function needs to write the newly allocated device address into the pointer variable \texttt{d\_A}.
+
+\subsection{Load and store operations}
+
+When a kernel accesses global memory, the SM performs load/store operations:
+
+\begin{lstlisting}
+float x = A[i];       // load
+C[i] = x + B[i];      // load B[i], compute, then store C[i]
+\end{lstlisting}
+
+A simple vector addition performs little arithmetic compared with its memory traffic:
+
+\[
+C[i] = A[i] + B[i].
+\]
+
+It reads two values, performs one addition, and writes one value. Such a kernel can therefore be limited by memory bandwidth rather than arithmetic throughput.
+
+\section{Block Scheduling on SMs}
+
+\subsection{One block is assigned to one SM}
+
+When a kernel is launched, the grid contains many thread blocks. The hardware assigns each block \textbf{as a complete unit} to one SM:
+
+\[
+\boxed{
+\text{one block}
+\rightarrow
+\text{one SM}
+}
+\]
+
+A block is not split across multiple SMs.
+
+However, the reverse statement is not true: \textbf{one SM can hold several blocks simultaneously} if enough hardware resources are available.
+
+Keeping a complete block on one SM allows all threads in that block to share the same on-chip shared memory and to synchronize efficiently with \texttt{\_\_syncthreads()}.
+
+\subsection{A first introduction to warps}
+
+Before discussing SM resource limits, one more hardware unit is needed.
+
+A \textbf{warp} is the basic thread scheduling unit inside an SM. On current NVIDIA CUDA GPUs, a warp normally contains
+
+\[
+\boxed{32\ \text{threads}}.
+\]
+
+After a block is assigned to an SM, the block is divided into warps. The SM schedules and issues instructions at warp granularity rather than independently scheduling every CUDA thread one by one.
+
+Warps will be discussed in detail later in this chapter. At this point, it is enough to know that the maximum number of resident warps is one of the resources that can limit how many blocks fit on an SM.
+
+\subsection{Resources that limit resident blocks}
+
+The number of blocks that can reside simultaneously on one SM is limited by resources such as
+
+\begin{itemize}
+    \item maximum resident threads per SM;
+    \item maximum resident warps per SM;
+    \item maximum resident blocks per SM;
+    \item registers used per thread;
+    \item shared memory used per block.
+\end{itemize}
+
+Therefore, block residency is determined by both \textbf{block size} and \textbf{kernel resource usage}.
+
+For example, suppose
+
+\begin{lstlisting}
+myKernel<<<1000, 256>>>(...);
+\end{lstlisting}
+
+This launch creates
+
+\[
+1000 \times 256 = 256000
+\]
+
+threads.
+
+If a hypothetical GPU has 8 SMs and each SM can hold 4 such blocks, then at most
+
+\[
+8 \times 4 = 32
+\]
+
+blocks can be resident at one time. The other blocks wait. When a resident block finishes, its resources are released and another waiting block can be scheduled.
+
+CUDA does not guarantee block execution order. Blocks in the same kernel should normally be independent.
+
+\section{Synchronization and Transparent Scalability}
+
+\subsection{Block-level barrier synchronization}
+
+Threads in the same block can synchronize using
+
+\begin{lstlisting}
+__syncthreads();
+\end{lstlisting}
+
+A barrier divides execution into phases. Every thread in the block must reach the same barrier before any thread continues beyond it.
+
+A common pattern is:
+
+\begin{lstlisting}
+__shared__ float tile[256];
+
+int tid = threadIdx.x;
+tile[tid] = A[blockIdx.x * blockDim.x + tid];
+
+__syncthreads();
+
+float x = tile[255 - tid];
+\end{lstlisting}
+
+The barrier guarantees that all writes to \texttt{tile} have completed before threads start reading values written by other threads.
+
+The critical rule is:
+
+\[
+\boxed{
+\text{all threads in a block must reach the same barrier}
+}
+\]
+
+A barrier placed only in one branch of divergent control flow can cause invalid behavior.
+
+\subsection{Transparent scalability}
+
+Blocks in the same kernel do not normally synchronize with one another. This independence allows the same CUDA source code to run on GPUs with different numbers of SMs.
+
+A smaller GPU may execute fewer blocks simultaneously, while a larger GPU may keep more blocks resident at the same time. The source code does not need to change; the main difference is performance.
+
+This property is called \textbf{transparent scalability}.
+
+The practical rule is:
+
+\[
+\boxed{
+\text{same kernel source}
++
+\text{different GPU resources}
+\Rightarrow
+\text{same computation, different performance}
+}
+\]
+
+\section{Warps and Thread Linearization}
+
+\subsection{Blocks are partitioned into warps}
+
+After a block is assigned to an SM, the hardware divides its threads into groups of 32.
+
+For a one-dimensional block with 256 threads:
+
+\[
+\frac{256}{32}=8
+\]
+
+warps are created.
+
+The warp assignment is
+
+\[
+\begin{aligned}
+\text{Warp 0}:&\quad \text{threads }0\text{--}31,\\
+\text{Warp 1}:&\quad \text{threads }32\text{--}63,\\
+&\quad \cdots\\
+\text{Warp 7}:&\quad \text{threads }224\text{--}255.
+\end{aligned}
+\]
+
+If a block contains 48 threads, the hardware still allocates two warps. The second warp contains only 16 active threads, while the remaining 16 lanes are unused.
+
+This is one reason block sizes are often chosen as multiples of 32.
+
+\subsection{Two-dimensional blocks use row-major linearization}
+
+For a two-dimensional block, CUDA first converts the two-dimensional thread coordinate into a linear order.
+
+The \(x\) coordinate changes fastest, so the order follows the same row-major idea used by C/C++ arrays:
+
+\[
+\boxed{
+\text{linear\_tid}
+=
+\texttt{threadIdx.y}\times\texttt{blockDim.x}
++
+\texttt{threadIdx.x}
+}
+\]
+
+The resulting linear thread indices are then divided into groups of 32.
+
+For a three-dimensional block:
+
+\[
+\begin{aligned}
+\text{linear\_tid}
+={}&
+\texttt{threadIdx.z}
+\times
+\texttt{blockDim.y}
+\times
+\texttt{blockDim.x}\\
+&+
+\texttt{threadIdx.y}
+\times
+\texttt{blockDim.x}
++
+\texttt{threadIdx.x}.
+\end{aligned}
+\]
+
+\subsection{Warp ID and lane ID}
+
+Once the linear thread index is known,
+
+\[
+\boxed{
+\text{warp\_id}
+=
+\left\lfloor
+\frac{\text{linear\_tid}}{32}
+\right\rfloor
+}
+\]
+
+and
+
+\[
+\boxed{
+\text{lane\_id}
+=
+\text{linear\_tid}\bmod 32.
+}
+\]
+
+The \textbf{warp ID} tells us which warp inside the block contains the thread.
+
+The \textbf{lane ID} tells us the thread's position inside that warp, from 0 to 31.
+
+Consider a \(16\times16\) block. Then
+
+\[
+\text{linear\_tid}=16y+x.
+\]
+
+For thread
+
+\[
+(\texttt{threadIdx.x},\texttt{threadIdx.y})=(5,3),
+\]
+
+we obtain
+
+\[
+\text{linear\_tid}
+=
+3\times16+5
+=
+53.
+\]
+
+Therefore,
+
+\[
+\text{warp\_id}
+=
+\left\lfloor\frac{53}{32}\right\rfloor
+=
+1,
+\]
+
+and
+
+\[
+\text{lane\_id}
+=
+53\bmod32
+=
+21.
+\]
+
+So this thread belongs to \textbf{Warp 1} and occupies \textbf{lane 21} within that warp.
+
+Two useful boundary examples are
+
+\[
+(15,1)
+\rightarrow
+\text{linear\_tid}=31
+\rightarrow
+(\text{warp}=0,\text{lane}=31),
+\]
+
+and
+
+\[
+(0,2)
+\rightarrow
+\text{linear\_tid}=32
+\rightarrow
+(\text{warp}=1,\text{lane}=0).
+\]
+
+\subsection{Thread versus lane}
+
+A CUDA \textbf{thread} is a logical execution instance of the kernel.
+
+A \textbf{lane} is the position, 0--31, occupied by that thread within its warp when the warp instruction is executed.
+
+Therefore, lane 5 does not identify one unique thread in the whole block. Every warp has its own lane 5.
+
+For example:
+
+\[
+\text{thread 5}
+\rightarrow
+\text{Warp 0, lane 5},
+\]
+
+while
+
+\[
+\text{thread 37}
+\rightarrow
+\text{Warp 1, lane 5}.
+\]
+
+\section{SIMT Execution, Fetch, Dispatch, and the von Neumann Model}
+
+\subsection{Classical von Neumann organization}
+
+A simplified von Neumann processor contains four main parts:
+
+\begin{itemize}
+    \item \textbf{Memory}: stores instructions and data.
+    \item \textbf{Input/Output}: communicates with external devices.
+    \item \textbf{Control unit}: manages the instruction stream.
+    \item \textbf{Processing unit}: performs arithmetic and logical operations.
+\end{itemize}
+
+The control unit includes structures such as
+
+\begin{itemize}
+    \item \textbf{PC (Program Counter)}: stores the address of the next instruction.
+    \item \textbf{IR (Instruction Register)}: stores the instruction currently being processed.
+    \item instruction decode and control logic.
+\end{itemize}
+
+The processing unit includes
+
+\begin{itemize}
+    \item \textbf{ALU}: performs arithmetic and logic operations;
+    \item \textbf{register file}: stores fast temporary operands and results.
+\end{itemize}
+
+\subsection{Fetch, decode, and dispatch}
+
+A simplified instruction cycle is
+
+\[
+\text{fetch}
+\rightarrow
+\text{decode}
+\rightarrow
+\text{dispatch/execute}.
+\]
+
+\textbf{Fetch} means using the PC to obtain the next instruction from memory and placing it into the IR.
+
+\textbf{Decode} means determining what operation the instruction requests and what operands or resources it needs.
+
+\textbf{Dispatch} means sending the decoded operation to the appropriate execution hardware.
+
+\subsection{How the GPU extends this idea}
+
+The GPU keeps the same basic idea of control plus processing, but the control hardware is shared across many execution lanes.
+
+Conceptually, one warp instruction is fetched and dispatched to the active lanes of a warp. Each lane executes the same instruction but uses the register values associated with its own CUDA thread.
+
+This produces CUDA's \textbf{SIMT} model:
+
+\[
+\boxed{
+\text{Single Instruction, Multiple Threads}
+}
+\]
+
+The hardware idea is related to SIMD, but CUDA exposes independent logical threads to the programmer.
+
+For example, a warp may execute
+
+\begin{lstlisting}
+C[i] = A[i] + B[i];
+\end{lstlisting}
+
+for 32 different values of \(i\). The instruction is shared, but each thread operates on different data.
+
+This organization reduces the amount of independent control hardware required for every arithmetic lane and allows more hardware resources to be devoted to throughput.
+
+\section{Control Divergence}
+
+\subsection{Divergence in an if--else statement}
+
+SIMT execution is most efficient when all threads in a warp follow the same control-flow path.
+
+Consider
+
+\begin{lstlisting}
+if (threadIdx.x < 24) {
+    A;
+}
+else {
+    B;
+}
+
+C;
+\end{lstlisting}
+
+Assume one warp contains threads 0--31.
+
+Threads 0--23 satisfy the condition, while threads 24--31 do not.
+
+The warp cannot execute instructions from paths \(A\) and \(B\) simultaneously because the warp issues one instruction stream at a time.
+
+Conceptually, execution proceeds as follows:
+
+\[
+\begin{aligned}
+&\text{Pass 1: execute }A
+&&\text{lanes 0--23 active, lanes 24--31 inactive},\\
+&\text{Pass 2: execute }B
+&&\text{lanes 24--31 active, lanes 0--23 inactive},\\
+&\text{Reconverge: execute }C
+&&\text{all lanes active again}.
+\end{aligned}
+\]
+
+This behavior is called \textbf{control divergence}.
+
+The important point is not that an \texttt{if} statement is inherently slow. Divergence occurs only when threads \textbf{inside the same warp} make different branch decisions.
+
+\subsection{Relation between lanes and divergent threads}
+
+In Warp 0, logical threads 0--31 correspond to lane IDs 0--31.
+
+Therefore, in the example above:
+
+\[
+\text{threads 0--23}
+\leftrightarrow
+\text{lanes 0--23}
+\]
+
+execute path \(A\), and
+
+\[
+\text{threads 24--31}
+\leftrightarrow
+\text{lanes 24--31}
+\]
+
+execute path \(B\).
+
+The inactive lanes are temporarily masked while the other branch is executing.
+
+\subsection{Divergence in loops}
+
+Divergence can also occur when different threads execute different numbers of loop iterations:
+
+\begin{lstlisting}
+int N = a[threadIdx.x];
+
+for (int i = 0; i < N; ++i) {
+    A;
+}
+\end{lstlisting}
+
+If threads in one warp have different values of \(N\), some threads finish earlier than others.
+
+The warp must continue executing the loop until the thread with the largest required iteration count has finished. Threads that have already completed their work become inactive during the remaining iterations.
+
+Therefore, irregular per-thread workloads can reduce warp efficiency.
+
+\subsection{Boundary checks}
+
+Boundary checks can also cause divergence:
+
+\begin{lstlisting}
+int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+if (i < n) {
+    C[i] = A[i] + B[i];
+}
+\end{lstlisting}
+
+If \(n\) is not a multiple of the block size, only the final warp or final few warps are usually affected. For large arrays, this boundary divergence is normally acceptable because it represents a small fraction of the total work.
+
+\section{Warp Scheduling and Latency Hiding}
+
+\subsection{Resident warps}
+
+An SM usually holds more threads and warps than it can execute at one instant.
+
+The chapter uses the A100 as an example: one SM can have up to 2048 resident threads, corresponding to
+
+\[
+\frac{2048}{32}=64
+\]
+
+resident warps.
+
+These threads are \textbf{resident}: their execution state and required resources are assigned to the SM, but they are not all performing arithmetic simultaneously.
+
+A CUDA thread is therefore not permanently bound to one fixed CUDA core.
+
+\subsection{Why many resident warps are useful}
+
+Global memory operations can take many clock cycles.
+
+Suppose Warp 0 executes
+
+\begin{lstlisting}
+float x = A[i];
+\end{lstlisting}
+
+and the requested data is not immediately available. Warp 0 cannot execute a later instruction that depends on \(x\).
+
+Instead of leaving the execution units idle, the SM's warp scheduler can select another ready resident warp:
+
+\[
+\begin{aligned}
+&\text{Warp 0: waiting for memory}\\
+&\text{Warp 1: ready}
+\rightarrow
+\text{execute Warp 1}\\
+&\text{Warp 2: ready}
+\rightarrow
+\text{execute Warp 2}.
+\end{aligned}
+\]
+
+When Warp 0's data becomes available, it becomes ready again and can return to the scheduling pool.
+
+This mechanism is called
+
+\[
+\boxed{
+\text{latency hiding}
+}
+\]
+
+or latency tolerance.
+
+The GPU does not necessarily make the memory access itself faster. Instead, it performs useful work from other warps while one warp is waiting.
+
+\subsection{Low-overhead warp switching}
+
+Traditional CPU thread context switching may require saving and restoring execution state.
+
+GPU resident warps already have their execution state stored in SM resources such as the register file. Therefore, switching instruction issue from one resident warp to another is extremely cheap compared with a traditional software thread context switch.
+
+This is often described as \textbf{zero-overhead warp scheduling}.
+
+\section{Resource Partitioning and Occupancy}
+
+\subsection{Definition of occupancy}
+
+Occupancy describes how many warps are resident on an SM relative to the hardware maximum:
+
+\[
+\boxed{
+\text{Occupancy}
+=
+\frac{\text{resident warps per SM}}
+{\text{maximum resident warps per SM}}
+}
+\]
+
+Because a warp contains 32 threads, thread counts can often be used equivalently:
+
+\[
+\text{Occupancy}
+\approx
+\frac{\text{resident threads per SM}}
+{\text{maximum resident threads per SM}}.
+\]
+
+Higher occupancy can provide more candidate warps for latency hiding, but
+
+\[
+\boxed{
+\text{higher occupancy}
+\neq
+\text{automatically higher performance}.
+}
+\]
+
+\subsection{Resources that limit occupancy}
+
+The number of resident blocks is approximately limited by the minimum of several resource constraints:
+
+\[
+\begin{aligned}
+\text{resident blocks/SM}
+=
+\min(
+&\text{thread limit},\\
+&\text{warp limit},\\
+&\text{block limit},\\
+&\text{register limit},\\
+&\text{shared-memory limit}
+).
+\end{aligned}
+\]
+
+A complete block can become resident only if enough resources are available for the whole block.
+
+\subsection{Block size can reduce occupancy}
+
+Using the chapter's A100 example with a maximum of 2048 resident threads and 32 resident blocks per SM:
+
+For 1024 threads per block,
+
+\[
+\frac{2048}{1024}=2
+\]
+
+blocks can reside from the thread-count limit.
+
+For 256 threads per block,
+
+\[
+\frac{2048}{256}=8
+\]
+
+blocks can reside from the thread-count limit.
+
+However, if the block size is only 32 threads, filling 2048 thread slots would require
+
+\[
+\frac{2048}{32}=64
+\]
+
+blocks, but the SM supports only 32 resident blocks. Therefore only
+
+\[
+32\times32=1024
+\]
+
+threads are resident, giving
+
+\[
+\text{Occupancy}
+=
+\frac{1024}{2048}
+=
+50\%.
+\]
+
+Thus, a block can be \textbf{too small} if another hardware limit is reached before all thread slots are filled.
+
+\subsection{Resource fragmentation}
+
+Suppose a block has 768 threads. The SM can fit two blocks:
+
+\[
+2\times768=1536
+\]
+
+threads.
+
+A third block would require
+
+\[
+3\times768=2304>2048.
+\]
+
+Therefore 512 thread slots remain unused, and occupancy is
+
+\[
+\frac{1536}{2048}=75\%.
+\]
+
+The remaining slots cannot be used because CUDA admits resources at block granularity.
+
+\subsection{Registers and occupancy}
+
+Registers are another major occupancy constraint.
+
+Using the chapter's simplified A100 example with 65,536 registers per SM, full occupancy with 2048 threads would allow, on average,
+
+\[
+\frac{65536}{2048}
+=
+32
+\]
+
+registers per thread.
+
+If a kernel requires 64 registers per thread, the register-file limit allows only
+
+\[
+\frac{65536}{64}
+=
+1024
+\]
+
+resident threads, so the occupancy cannot exceed approximately
+
+\[
+\frac{1024}{2048}
+=
+50\%.
+\]
+
+A small increase in register usage can therefore reduce the number of complete resident blocks. This sudden occupancy drop is sometimes called a \textbf{performance cliff}.
+
+If register demand becomes too high, the compiler may perform \textbf{register spilling}, storing some values in slower memory. Reducing register usage may improve occupancy, but excessive spilling can hurt performance.
+
+The practical goal is not simply to maximize occupancy, but to balance
+
+\[
+\text{occupancy}
+\quad\text{against}\quad
+\text{per-thread efficiency and data reuse}.
+\]
+
+\section{Querying CUDA Device Properties}
+
+Different GPUs provide different numbers of SMs and different limits for threads, blocks, registers, shared memory, and grid dimensions.
+
+CUDA therefore provides runtime APIs for querying the actual hardware.
+
+\subsection{Count CUDA devices}
+
+\begin{lstlisting}
+int devCount = 0;
+cudaGetDeviceCount(&devCount);
+\end{lstlisting}
+
+CUDA devices are indexed from 0 to \texttt{devCount - 1}.
+
+\subsection{Read device properties}
+
+\begin{lstlisting}
+cudaDeviceProp devProp;
+
+for (int i = 0; i < devCount; ++i) {
+    cudaGetDeviceProperties(&devProp, i);
+}
+\end{lstlisting}
+
+Important fields include:
+
+\begin{itemize}
+    \item \texttt{devProp.multiProcessorCount}: number of SMs;
+    \item \texttt{devProp.maxThreadsPerBlock}: maximum threads in one block;
+    \item \texttt{devProp.maxThreadsDim[0..2]}: maximum block dimensions;
+    \item \texttt{devProp.maxGridSize[0..2]}: maximum grid dimensions;
+    \item \texttt{devProp.warpSize}: hardware warp size;
+    \item register and shared-memory capacity fields;
+    \item \texttt{devProp.clockRate}: device clock information.
+\end{itemize}
+
+\subsection{Compute capability}
+
+Compute capability identifies the architectural generation and supported CUDA hardware features.
+
+It should be understood as
+
+\[
+\boxed{
+\text{architecture/capability identifier}
+}
+\]
+
+rather than a direct performance score.
+
+Device queries are useful because the same CUDA source can run on different GPUs whose resource limits and performance characteristics are not identical.
+
+\section{Execution Hierarchy to Remember}
+
+The most important hierarchy in this chapter is
+
+\[
+\boxed{
+\text{kernel}
+\rightarrow
+\text{grid}
+\rightarrow
+\text{blocks}
+\rightarrow
+\text{SMs}
+\rightarrow
+\text{warps}
+\rightarrow
+\text{threads}.
+}
+\]
+
+The key performance relationships are
+
+\[
+\begin{aligned}
+\text{block scheduling}
+&\rightarrow
+\text{SM resource usage},\\
+\text{warp execution}
+&\rightarrow
+\text{SIMT efficiency},\\
+\text{divergence}
+&\rightarrow
+\text{inactive lanes},\\
+\text{many resident warps}
+&\rightarrow
+\text{latency hiding},\\
+\text{register/shared-memory usage}
+&\rightarrow
+\text{occupancy}.
+\end{aligned}
+\]
+
+These concepts form the foundation for later CUDA performance analysis and kernel optimization.
+
+\end{document}
