@@ -17,9 +17,9 @@ No, shared memory generally does not reduce global-memory traffic for a simple m
 
 For
 
-$$
+```math
 C_{ij}=A_{ij}+B_{ij},
-$$
+```
 
 the thread that computes $C_{ij}$ reads $A_{ij}$ and $B_{ij}$. Other threads do not normally reuse these same input values.
 
@@ -37,9 +37,9 @@ In matrix addition:
 
 The important principle is:
 
-$$
+```math
 \boxed{\text{Shared memory is useful when there is data reuse across threads.}}
-$$
+```
 
 ---
 
@@ -62,25 +62,25 @@ However, the important reason for the bandwidth reduction is not simply that the
 
 There are
 
-$$
+```math
 8\times8=64
-$$
+```
 
 output elements.
 
 Each output element requires
 
-$$
+```math
 8 \text{ elements from } M
 +
 8 \text{ elements from } N.
-$$
+```
 
 Thus the software-level input load demand is
 
-$$
+```math
 64\times16=1024
-$$
+```
 
 element loads.
 
@@ -88,43 +88,43 @@ element loads.
 
 Each block has
 
-$$
+```math
 2\times2=4
-$$
+```
 
 threads.
 
 Each phase loads
 
-$$
+```math
 4 \text{ elements from } M
 +
 4 \text{ elements from } N
 =
 8
-$$
+```
 
 elements.
 
 The shared dimension has length 8, so there are
 
-$$
+```math
 8/2=4
-$$
+```
 
 phases.
 
 Loads per block:
 
-$$
+```math
 8\times4=32.
-$$
+```
 
 There are 16 blocks, so
 
-$$
+```math
 32\times16=512
-$$
+```
 
 global element loads.
 
@@ -132,37 +132,37 @@ global element loads.
 
 Each phase loads
 
-$$
+```math
 16+16=32
-$$
+```
 
 elements.
 
 There are
 
-$$
+```math
 8/4=2
-$$
+```
 
 phases.
 
 Loads per block:
 
-$$
+```math
 32\times2=64.
-$$
+```
 
 There are 4 blocks, so
 
-$$
+```math
 64\times4=256
-$$
+```
 
 loads.
 
 ### Comparison
 
-$$
+```math
 \begin{array}{c|c}
 \text{Method} & \text{Input element loads}\\
 \hline
@@ -170,7 +170,7 @@ $$
 2\times2\text{ tiling} & 512\\
 4\times4\text{ tiling} & 256
 \end{array}
-$$
+```
 
 Therefore the idealized reduction factor is proportional to the tile width $T$.
 
@@ -194,33 +194,33 @@ If the second `__syncthreads()` is omitted, some threads may begin loading the n
 
 The two barriers have different roles:
 
-$$
+```math
 \text{load}
 \rightarrow
 \boxed{\text{synchronize}}
 \rightarrow
 \text{compute}
-$$
+```
 
 The first barrier guarantees that the current shared-memory tiles are complete before computation starts.
 
 Then:
 
-$$
+```math
 \text{compute}
 \rightarrow
 \boxed{\text{synchronize}}
 \rightarrow
 \text{next phase load}
-$$
+```
 
 The second barrier guarantees that all threads have finished reading the current tiles before those tiles are overwritten.
 
 The general rule is:
 
-$$
+```math
 \boxed{\text{Synchronization is required by inter-thread data dependency.}}
-$$
+```
 
 ---
 
@@ -240,13 +240,13 @@ Therefore, a value stored in one thread's register cannot be directly reused by 
 
 For data reuse across threads:
 
-$$
+```math
 \boxed{\text{registers: thread-private}}
-$$
+```
 
-$$
+```math
 \boxed{\text{shared memory: block-shared}}
-$$
+```
 
 This is why tiled matrix multiplication stores input tiles in shared memory rather than in individual thread registers.
 
@@ -262,49 +262,49 @@ For the tiled matrix-matrix multiplication kernel, if a $32\times32$ tile is use
 
 A $32\times32$ block contains
 
-$$
+```math
 32\times32=1024
-$$
+```
 
 threads.
 
 For one shared-dimension segment of length 32, the naive implementation requires each thread to load
 
-$$
+```math
 32 \text{ elements from } M
 +
 32 \text{ elements from } N.
-$$
+```
 
 Therefore,
 
-$$
+```math
 N_{\text{load, naive}}
 =
 1024\times64
 =
 65536.
-$$
+```
 
 With tiling, the block cooperatively loads only two $32\times32$ tiles:
 
-$$
+```math
 N_{\text{load, tiled}}
 =
 32\times32+32\times32
 =
 2048.
-$$
+```
 
 Thus,
 
-$$
+```math
 \text{reduction factor}
 =
 \frac{65536}{2048}
 =
 \boxed{32}.
-$$
+```
 
 The idealized global-memory load demand is reduced by approximately $32\times$.
 
@@ -322,15 +322,15 @@ A local kernel variable is logically private to each thread.
 
 Total number of threads:
 
-$$
+```math
 1000\times512=512000.
-$$
+```
 
 Therefore,
 
-$$
+```math
 \boxed{512000\text{ versions}}
-$$
+```
 
 are created logically.
 
@@ -340,9 +340,9 @@ A normal automatic variable declared inside a kernel is thread-private. It is no
 
 Thus,
 
-$$
+```math
 \boxed{\text{thread-private variable} \Rightarrow \text{one logical copy per thread}}
-$$
+```
 
 ---
 
@@ -358,22 +358,22 @@ Shared memory is allocated once per block.
 
 There are 1000 blocks, so
 
-$$
+```math
 \boxed{1000\text{ versions}}
-$$
+```
 
 of the shared variable are created.
 
 ### Key distinction
 
-$$
+```math
 \begin{array}{c|c}
 \text{Variable type} & \text{Logical copies}\\
 \hline
 \text{thread-private/local} & \text{one per thread}\\
 \text{shared} & \text{one per block}
 \end{array}
-$$
+```
 
 ---
 
@@ -392,15 +392,15 @@ Consider one element of matrix $A$, for example $A_{00}$.
 
 It contributes to every output element in the corresponding output row:
 
-$$
+```math
 C_{00},C_{01},\ldots,C_{0,N-1}.
-$$
+```
 
 Therefore each element of $A$ is requested approximately
 
-$$
+```math
 \boxed{N}
-$$
+```
 
 times.
 
@@ -408,9 +408,9 @@ The same is true for each element of $B$.
 
 The total input-element load demand is therefore
 
-$$
+```math
 2N^3.
-$$
+```
 
 ### (b) $T\times T$ Tiling
 
@@ -418,40 +418,40 @@ A value loaded into shared memory can be reused by $T$ threads within the block.
 
 Therefore each input element needs to be requested from global memory approximately
 
-$$
+```math
 \boxed{\frac{N}{T}}
-$$
+```
 
 times when $N$ is divisible by $T$.
 
 The total input-element load demand becomes
 
-$$
+```math
 \boxed{\frac{2N^3}{T}}.
-$$
+```
 
 Thus the idealized reduction factor is
 
-$$
+```math
 \boxed{T}.
-$$
+```
 
 ### Non-divisible dimensions
 
 If $N$ is not divisible by $T$, the number of tile positions along one dimension is
 
-$$
+```math
 \left\lceil\frac{N}{T}\right\rceil.
-$$
+```
 
 With boundary checks, invalid tile positions are not actually loaded from global memory. A useful valid-load count is
 
-$$
+```math
 \boxed{
 2N^2
 \left\lceil\frac{N}{T}\right\rceil
 }.
-$$
+```
 
 ---
 
@@ -469,56 +469,56 @@ A kernel performs 36 floating-point operations and seven 32-bit global-memory ac
 
 A 32-bit access transfers
 
-$$
+```math
 32\text{ bits}=4\text{ bytes}.
-$$
+```
 
 Seven accesses correspond to
 
-$$
+```math
 7\times4=28\text{ B}.
-$$
+```
 
 Therefore,
 
-$$
+```math
 AI
 =
 \frac{36}{28}
 \approx
 1.286\text{ FLOP/B}.
-$$
+```
 
 ### (a)
 
 Machine balance:
 
-$$
+```math
 \frac{200\text{ GFLOP/s}}
 {100\text{ GB/s}}
 =
 2\text{ FLOP/B}.
-$$
+```
 
 Since
 
-$$
+```math
 1.286<2,
-$$
+```
 
 the kernel is
 
-$$
+```math
 \boxed{\text{memory-bound}}.
-$$
+```
 
 Equivalently, the memory roof is
 
-$$
+```math
 1.286\times100
 =
 128.6\text{ GFLOP/s},
-$$
+```
 
 which is below the 200 GFLOP/s compute peak.
 
@@ -526,23 +526,23 @@ which is below the 200 GFLOP/s compute peak.
 
 Machine balance:
 
-$$
+```math
 \frac{300}{250}
 =
 1.2\text{ FLOP/B}.
-$$
+```
 
 Since
 
-$$
+```math
 1.286>1.2,
-$$
+```
 
 the kernel is
 
-$$
+```math
 \boxed{\text{compute-bound}}.
-$$
+```
 
 ### General procedure
 
@@ -551,21 +551,21 @@ For this type of problem:
 1. Convert global-memory accesses to bytes.
 2. Compute
 
-$$
+```math
 AI=\frac{\text{FLOPs}}{\text{Bytes}}.
-$$
+```
 
 3. Compute the machine balance
 
-$$
+```math
 \frac{\text{Peak FLOP/s}}{\text{Peak bandwidth}}.
-$$
+```
 
 4. Compare the two values.
 
 Equivalently,
 
-$$
+```math
 P_{\max}
 \approx
 \min
@@ -573,7 +573,7 @@ P_{\max}
 P_{\text{compute peak}},
 AI\times BW
 \right).
-$$
+```
 
 This is the basic idea of the Roofline model.
 
@@ -601,35 +601,35 @@ A_elements[baseIdx]
 
 The block contains
 
-$$
+```math
 BLOCK\_WIDTH^2
-$$
+```
 
 threads.
 
 Under the textbook's warp-synchronous reasoning, the code can appear to work without a block-wide barrier if the entire block fits in one warp:
 
-$$
+```math
 BLOCK\_WIDTH^2\le32.
-$$
+```
 
 Therefore,
 
-$$
+```math
 \boxed{BLOCK\_WIDTH=1,2,3,4,5}.
-$$
+```
 
 Because
 
-$$
+```math
 5^2=25\le32,
-$$
+```
 
 while
 
-$$
+```math
 6^2=36>32.
-$$
+```
 
 ### (b) What is the root cause and how should it be fixed?
 
@@ -637,15 +637,15 @@ The problem is a missing synchronization barrier between the shared-memory write
 
 Thread $(x,y)$ writes
 
-$$
+```math
 blockA[y][x]
-$$
+```
 
 but reads
 
-$$
+```math
 blockA[x][y],
-$$
+```
 
 which is usually written by another thread.
 
@@ -695,23 +695,23 @@ __shared__ float b_s[128];
 
 The number of blocks is
 
-$$
+```math
 \frac{1024+127}{128}=8.
-$$
+```
 
 Each block has
 
-$$
+```math
 128
-$$
+```
 
 threads.
 
 Total threads:
 
-$$
+```math
 8\times128=1024.
-$$
+```
 
 ### (a) How many versions of `i` are there?
 
@@ -719,9 +719,9 @@ $$
 
 Therefore,
 
-$$
+```math
 \boxed{1024}
-$$
+```
 
 versions.
 
@@ -733,15 +733,15 @@ Each thread has its own four-element array.
 
 Therefore,
 
-$$
+```math
 \boxed{1024\text{ versions of }x[]}.
-$$
+```
 
 This corresponds to
 
-$$
+```math
 1024\times4=4096
-$$
+```
 
 float elements in total.
 
@@ -751,9 +751,9 @@ float elements in total.
 
 There are 8 blocks:
 
-$$
+```math
 \boxed{8}
-$$
+```
 
 versions.
 
@@ -763,29 +763,29 @@ versions.
 
 There is one whole array per block:
 
-$$
+```math
 \boxed{8\text{ versions of }b_s[]}.
-$$
+```
 
 ### (e) How much shared memory is used per block?
 
 `y_s`:
 
-$$
+```math
 1\times4=4\text{ B}.
-$$
+```
 
 `b_s[128]`:
 
-$$
+```math
 128\times4=512\text{ B}.
-$$
+```
 
 Total:
 
-$$
+```math
 \boxed{516\text{ B/block}}.
-$$
+```
 
 ### (f) What is the floating-point to global-memory access ratio?
 
@@ -796,9 +796,9 @@ The output expression contains:
 
 Therefore,
 
-$$
+```math
 10\text{ FLOPs/thread}.
-$$
+```
 
 Global-memory accesses:
 
@@ -808,25 +808,25 @@ Global-memory accesses:
 
 Total:
 
-$$
+```math
 6\text{ global-memory accesses}.
-$$
+```
 
 Each access is 4 bytes:
 
-$$
+```math
 6\times4=24\text{ B}.
-$$
+```
 
 Thus,
 
-$$
+```math
 \boxed{
 \frac{10}{24}
 \approx
 0.417\text{ OP/B}
 }
-$$
+```
 
 ### Why is `(threadIdx.x + 3) % 128` not counted as a FLOP?
 
@@ -873,9 +873,9 @@ Therefore, both interpretations are discussed below.
 
 To reach 2048 threads:
 
-$$
+```math
 2048/64=32\text{ blocks}.
-$$
+```
 
 This equals the hardware limit of 32 blocks/SM.
 
@@ -883,21 +883,21 @@ This equals the hardware limit of 32 blocks/SM.
 
 Registers per block:
 
-$$
+```math
 64\times27=1728.
-$$
+```
 
 For 32 blocks:
 
-$$
+```math
 1728\times32=55296.
-$$
+```
 
 Since
 
-$$
+```math
 55296<65536,
-$$
+```
 
 registers do not prevent full occupancy.
 
@@ -907,35 +907,35 @@ If the kernel truly uses only 4 KB total shared memory per SM, then shared memor
 
 Under the wording as printed:
 
-$$
+```math
 \boxed{\text{full occupancy is achievable}}.
-$$
+```
 
 #### If the intended wording is 4 KB shared memory/block
 
 The shared-memory limit allows:
 
-$$
+```math
 96/4=24\text{ blocks}.
-$$
+```
 
 Therefore resident threads are
 
-$$
+```math
 24\times64=1536.
-$$
+```
 
 Occupancy:
 
-$$
+```math
 \frac{1536}{2048}=0.75.
-$$
+```
 
 Thus:
 
-$$
+```math
 \boxed{75\%\text{ occupancy}}
-$$
+```
 
 with shared memory as the limiting factor.
 
@@ -943,33 +943,33 @@ with shared memory as the limiting factor.
 
 Full occupancy requires
 
-$$
+```math
 2048/256=8\text{ blocks}.
-$$
+```
 
 Registers per block:
 
-$$
+```math
 256\times31=7936.
-$$
+```
 
 For 8 blocks:
 
-$$
+```math
 7936\times8=63488<65536.
-$$
+```
 
 If shared memory is interpreted as 8 KB/block:
 
-$$
+```math
 8\times8\text{ KB}=64\text{ KB}<96\text{ KB}.
-$$
+```
 
 Therefore all given constraints permit full occupancy:
 
-$$
+```math
 \boxed{100\%\text{ occupancy}}.
-$$
+```
 
 The same conclusion holds under the literal 8 KB/SM interpretation.
 
@@ -979,101 +979,101 @@ The same conclusion holds under the literal 8 KB/SM interpretation.
 
 The exercises reinforce the main logic of this chapter:
 
-$$
+```math
 \boxed{
 \text{Global memory traffic is expensive}
 }
-$$
+```
 
-$$
+```math
 \downarrow
-$$
+```
 
-$$
+```math
 \boxed{
 \text{Identify data reuse}
 }
-$$
+```
 
-$$
+```math
 \downarrow
-$$
+```
 
-$$
+```math
 \boxed{
 \text{Use shared memory and tiling}
 }
-$$
+```
 
-$$
+```math
 \downarrow
-$$
+```
 
-$$
+```math
 \boxed{
 \text{Synchronize threads correctly}
 }
-$$
+```
 
-$$
+```math
 \downarrow
-$$
+```
 
-$$
+```math
 \boxed{
 \text{Reduce repeated global-memory loads}
 }
-$$
+```
 
-$$
+```math
 \downarrow
-$$
+```
 
-$$
+```math
 \boxed{
 \text{Increase arithmetic intensity}
 }
-$$
+```
 
-$$
+```math
 \downarrow
-$$
+```
 
-$$
+```math
 \boxed{
 \text{Balance shared-memory/register usage against occupancy}
 }
-$$
+```
 
 The most useful performance quantities to remember are:
 
-$$
+```math
 \boxed{
 \text{Bandwidth}
 =
 \frac{\text{Bytes transferred}}{\text{time}}
 }
-$$
+```
 
-$$
+```math
 \boxed{
 \text{Compute throughput}
 =
 \frac{\text{FLOPs}}{\text{time}}
 }
-$$
+```
 
-$$
+```math
 \boxed{
 AI
 =
 \frac{\text{FLOPs}}{\text{Bytes}}
 }
-$$
+```
 
 and the simplified Roofline relation:
 
-$$
+```math
 \boxed{
 P_{\max}
 \approx
@@ -1083,6 +1083,6 @@ P_{\text{peak}},
 AI\times BW
 \right)
 }
-$$
+```
 
 These ideas form the foundation for later CUDA topics such as reduction, convolution, optimized GEMM, and attention kernels.
