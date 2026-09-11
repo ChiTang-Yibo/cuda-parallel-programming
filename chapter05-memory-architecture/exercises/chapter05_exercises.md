@@ -162,15 +162,11 @@ loads.
 
 ### Comparison
 
-```math
-\begin{array}{c|c}
-\text{Method} & \text{Input element loads}\\
-\hline
-\text{No tiling} & 1024\\
-2\times2\text{ tiling} & 512\\
-4\times4\text{ tiling} & 256
-\end{array}
-```
+| Method | Input element loads |
+|---|---:|
+| No tiling | 1024 |
+| $2\times2$ tiling | 512 |
+| $4\times4$ tiling | 256 |
 
 Therefore the idealized reduction factor is proportional to the tile width $T$.
 
@@ -366,14 +362,10 @@ of the shared variable are created.
 
 ### Key distinction
 
-```math
-\begin{array}{c|c}
-\text{Variable type} & \text{Logical copies}\\
-\hline
-\text{thread-private/local} & \text{one per thread}\\
-\text{shared} & \text{one per block}
-\end{array}
-```
+| Variable type | Logical copies |
+|---|---|
+| thread-private/local | one per thread |
+| shared | one per block |
 
 ---
 
