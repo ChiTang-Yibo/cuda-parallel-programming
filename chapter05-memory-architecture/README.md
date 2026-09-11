@@ -71,3 +71,8 @@ shared-memory tile
 multiple reuses
       ↓
 higher arithmetic intensity
+```
+
+The broader principle is:
+
+> Use limited on-chip resources such as shared memory and registers to increase data reuse and reduce expensive global-memory traffic, while maintaining enough active warps and blocks to achieve good occupancy.
