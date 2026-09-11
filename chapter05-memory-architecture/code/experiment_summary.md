@@ -35,9 +35,9 @@ The reported timing measures **kernel execution only**. Host-device memory trans
 
 GFLOP/s is calculated using the conventional GEMM operation count
 
-\[
+$$
 \mathrm{FLOPs} \approx 2MNK.
-\]
+$$
 
 ---
 
@@ -80,25 +80,25 @@ Grid:  (33, 33)
 
 Speedup:
 
-\[
+$$
 \frac{T_{\mathrm{naive}}}{T_{\mathrm{tiled}}}
 =
 1.3184.
-\]
+$$
 
 This test is important because all three matrix dimensions are not divisible by 16:
 
-\[
+$$
 513 = 32\times16+1,
-\]
+$$
 
-\[
+$$
 509 = 31\times16+13,
-\]
+$$
 
-\[
+$$
 517 = 32\times16+5.
-\]
+$$
 
 Therefore, it simultaneously tests incomplete output tiles and an incomplete final phase along the shared dimension.
 
@@ -121,9 +121,9 @@ Grid:  (2, 2)
 
 Speedup:
 
-\[
+$$
 0.5659\times.
-\]
+$$
 
 The tiled kernel is slower in this very small case. This is expected because the workload is too small to amortize the overhead of shared-memory stores, synchronization, and execution of partially filled tiles.
 
@@ -148,9 +148,9 @@ Grid:  (3, 2)
 
 Speedup:
 
-\[
+$$
 1.2008\times.
-\]
+$$
 
 This test further confirms that the boundary-handling logic works for rectangular matrices whose `M`, `K`, and `N` dimensions are all different.
 
@@ -158,59 +158,59 @@ This test further confirms that the boundary-handling logic works for rectangula
 
 ## 5. Why Tiling Reduces Global-Memory Load Demand
 
-For a tile width \(T\), one block contains
+For a tile width $T$, one block contains
 
-\[
+$$
 T^2
-\]
+$$
 
 threads.
 
 In a naive implementation, every thread independently loads the input elements required for its dot product.
 
-For a shared dimension of length \(K\), the approximate software-level load demand per block is
+For a shared dimension of length $K$, the approximate software-level load demand per block is
 
-\[
+$$
 2KT^2
-\]
+$$
 
 floating-point elements.
 
-In the tiled implementation, each phase loads only two \(T\times T\) tiles:
+In the tiled implementation, each phase loads only two $T\times T$ tiles:
 
-\[
+$$
 2T^2
-\]
+$$
 
 elements.
 
 The number of phases is approximately
 
-\[
+$$
 \frac{K}{T}.
-\]
+$$
 
 Therefore, the total load demand per block becomes
 
-\[
+$$
 2T^2\frac{K}{T}
 =
 2KT.
-\]
+$$
 
 The idealized reduction factor is therefore
 
-\[
+$$
 \frac{2KT^2}{2KT}
 =
 T.
-\]
+$$
 
 For
 
-\[
+$$
 T=16,
-\]
+$$
 
 the software access model predicts approximately a **16x reduction in repeated global-memory load demand**.
 
@@ -226,85 +226,85 @@ Tiling does not reduce the number of arithmetic operations. Its main benefit is 
 
 For one output element, the kernel performs approximately
 
-\[
+$$
 2K
-\]
+$$
 
 FLOPs and reads approximately
 
-\[
+$$
 2K
-\]
+$$
 
 floating-point values.
 
 Since each `float` occupies 4 bytes,
 
-\[
+$$
 \mathrm{AI}_{\mathrm{naive}}
 \approx
 \frac{2K}{2K\times4}
 =
 0.25\ \mathrm{FLOP/B}.
-\]
+$$
 
 This simplified model ignores the final output store and hardware caching.
 
 ### Tiled Kernel
 
-For one phase, two \(T\times T\) tiles are loaded:
+For one phase, two $T\times T$ tiles are loaded:
 
-\[
+$$
 2T^2
-\]
+$$
 
 floats, corresponding to
 
-\[
+$$
 8T^2
-\]
+$$
 
 bytes.
 
 The block performs
 
-\[
+$$
 T^2
-\]
+$$
 
-thread-level dot-product fragments, each containing \(T\) multiply-add operations:
+thread-level dot-product fragments, each containing $T$ multiply-add operations:
 
-\[
+$$
 2T^3
-\]
+$$
 
 FLOPs.
 
 Therefore,
 
-\[
+$$
 \mathrm{AI}_{\mathrm{tiled}}
 \approx
 \frac{2T^3}{8T^2}
 =
 \frac{T}{4}\ \mathrm{FLOP/B}.
-\]
+$$
 
 For `TILE_WIDTH = 16`,
 
-\[
+$$
 \mathrm{AI}_{\mathrm{tiled}}
 \approx
 4\ \mathrm{FLOP/B}.
-\]
+$$
 
 Thus, under the idealized model,
 
-\[
+$$
 0.25
 \rightarrow
 4\ \mathrm{FLOP/B},
-\]
+$$
 
 which corresponds to a factor of 16 increase in arithmetic intensity.
 
@@ -361,25 +361,25 @@ First, shared-memory tiling improves data reuse. Threads in the same block coope
 
 Second, tiling increases arithmetic intensity. In the simplified access model used here,
 
-\[
+$$
 \mathrm{AI}_{\mathrm{naive}}
 \approx
 0.25\ \mathrm{FLOP/B},
-\]
+$$
 
 while
 
-\[
+$$
 \mathrm{AI}_{\mathrm{tiled}}
 \approx
 \frac{T}{4}\ \mathrm{FLOP/B}.
-\]
+$$
 
 For `TILE_WIDTH = 16`, this gives approximately
 
-\[
+$$
 4\ \mathrm{FLOP/B}.
-\]
+$$
 
 Third, the boundary tests confirm that the implementation correctly handles matrix dimensions that are not multiples of the tile size.
 
