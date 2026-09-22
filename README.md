@@ -66,7 +66,7 @@ cuda-parallel-programming/
 - [x] [Chapter 3 — Multidimensional Grids and Data](chapter03-multidimensional-grids-and-data/)
 - [x] [Chapter 4 — GPU Architecture and Scheduling](chapter04-gpu-architecture/)
 - [x] [Chapter 5 — Memory Architecture and Data Locality](chapter05-memory-architecture/)
-- [ ] Chapter 6 — Performance Considerations
+- [x] [Chapter 6 — Performance Considerations](chapter06-performance-considerations/)
 
 ## Workflow
 
