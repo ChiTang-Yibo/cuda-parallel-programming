@@ -249,7 +249,7 @@ AI
 ## Final Answers
 
 - **Exercise 1:** Corner turning restores coalesced global-memory loads for column-major $B$; adding shared-memory padding removes most of the remaining bank-conflict overhead.
-- **Exercise 2:** $\texttt{BLOCK\_SIZE}=32$
+- **Exercise 2:** BLOCK SIZE=32
 - **Exercise 4(a):** $0.25\ \text{OP/B}$
 - **Exercise 4(b):** $8\ \text{OP/B}$
 - **Exercise 4(c):** $12.8\ \text{OP/B}$
