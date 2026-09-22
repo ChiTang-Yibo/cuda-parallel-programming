@@ -27,24 +27,22 @@ Corner turning changes the mapping so that neighboring threads load neighboring 
 
 Adding one column of shared-memory padding,
 
-$$
+```math
 [T][T]
 \rightarrow
 [T][T+1],
-$$
-
+```
 further reduces shared-memory bank conflicts. The padded corner-turning kernel reaches performance very close to the standard row-major tiled kernel.
 
 The CPU experiment shows the opposite layout preference for the current $i$-$j$-$k$ loop order: column-major $B$ makes the inner $k$ loop contiguous and is therefore faster than row-major $B$. At $N=1024$, the measured CPU speedup is about $1.52\times$.
 
 The main conclusion is:
 
-$$
+```math
 \boxed{
 \text{performance depends on data layout, thread mapping, and memory-access pattern together}
 }
-$$
-
+```
 Column-major storage is not inherently slow on the GPU. It becomes inefficient only when the thread mapping does not follow its contiguous memory direction.
 
 ---
@@ -53,28 +51,24 @@ Column-major storage is not inherently slow on the GPU. It becomes inefficient o
 
 For a square CUDA block,
 
-$$
+```math
 \texttt{blockDim}=(B,B),
-$$
-
+```
 the linear thread ID is
 
-$$
+```math
 tid=t_yB+t_x.
-$$
-
+```
 To make a full warp correspond to one complete row of threads, we want
 
-$$
+```math
 t_x=0,1,\ldots,31
-$$
-
+```
 while $t_y$ remains fixed. Therefore the square block width should be one warp wide:
 
-$$
+```math
 \boxed{\texttt{BLOCK\_SIZE}=32}
-$$
-
+```
 Since a square $32\times32$ block already contains 1024 threads, it is also at the usual CUDA maximum threads-per-block limit.
 
 The key rule is that **coalescing is judged across threads in the same warp executing the same global-memory instruction**, not by looking at one thread in isolation.
@@ -123,12 +117,11 @@ __global__ void foo_kernel(float* a, float* b, float* c, float* d, float* e) {
 
 For a global-memory instruction, ask:
 
-$$
+```math
 \boxed{
 \text{When }\texttt{threadIdx.x}\text{ increases by 1, how much does the memory index increase?}
 }
-$$
-
+```
 For shared memory, global-memory coalescing does not apply.
 
 ---
@@ -137,27 +130,25 @@ For shared memory, global-memory coalescing does not apply.
 
 The ratio is measured in operations per byte:
 
-$$
+```math
 \boxed{
 \text{OP/B}
 =
 \frac{\text{floating-point operations}}
 {\text{global-memory bytes transferred}}
 }
-$$
-
+```
 The calculation below follows the chapter convention of focusing on input global-memory traffic and ignoring the final output store.
 
 ### (a) Naive Matrix Multiplication
 
 For one output element,
 
-$$
+```math
 P_{ij}
 =
 \sum_{k=0}^{W-1} M_{ik}N_{kj}.
-$$
-
+```
 Per output:
 
 - $W$ loads from $M$,
@@ -166,41 +157,37 @@ Per output:
 
 Thus
 
-$$
+```math
 \text{bytes}=2W\times4=8W,
-$$
-
+```
 and
 
-$$
+```math
 \boxed{
 \frac{2W}{8W}
 =
 0.25\ \text{OP/B}
 }
-$$
-
+```
 ---
 
 ### (b) $32\times32$ Shared-Memory Tiled MatMul
 
 For one phase:
 
-$$
+```math
 2\times32^2
-$$
-
+```
 input floats are loaded, while the output tile performs
 
-$$
+```math
 2\times32^3
-$$
-
+```
 floating-point operations.
 
 Therefore,
 
-$$
+```math
 \boxed{
 AI
 =
@@ -209,8 +196,7 @@ AI
 =
 8\ \text{OP/B}
 }
-$$
-
+```
 ---
 
 ### (c) $32\times32$ Tiling + Thread Coarsening, $C=4$
@@ -222,38 +208,34 @@ For $C$ adjacent output tiles in one phase:
 
 Total input traffic:
 
-$$
+```math
 (C+1)T^2
-$$
-
+```
 floats.
 
 The computation is
 
-$$
+```math
 2CT^3
-$$
-
+```
 operations.
 
 Hence
 
-$$
+```math
 AI
 =
 \frac{2CT^3}
 {4(C+1)T^2}
 =
 \frac{CT}{2(C+1)}.
-$$
-
+```
 For
 
-$$
+```math
 T=32,\qquad C=4,
-$$
-
-$$
+```
+```math
 \boxed{
 AI
 =
@@ -261,8 +243,7 @@ AI
 =
 12.8\ \text{OP/B}
 }
-$$
-
+```
 ---
 
 ## Final Answers
